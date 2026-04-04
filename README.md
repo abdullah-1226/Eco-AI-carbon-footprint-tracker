@@ -1,1 +1,1 @@
-# eco_carbon_backend
+# eco_ai_personal_carbon_footprint_tracker
