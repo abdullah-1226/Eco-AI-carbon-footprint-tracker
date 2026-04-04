@@ -4,6 +4,21 @@ import { Text, TextInput, Button } from 'react-native-paper';
 import { useAuth } from '../../context/AuthContext';
 import { Colors, Shadow, Radii, Spacing } from '../../theme';
 
+// Returns { score: 0-4, label, color, checks }
+const getPasswordStrength = (pwd) => {
+  const checks = {
+    length:    pwd.length >= 8,
+    uppercase: /[A-Z]/.test(pwd),
+    lowercase: /[a-z]/.test(pwd),
+    number:    /[0-9]/.test(pwd),
+    special:   /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
+  };
+  const score = Object.values(checks).filter(Boolean).length;
+  const label = score <= 1 ? 'Very Weak' : score === 2 ? 'Weak' : score === 3 ? 'Fair' : score === 4 ? 'Good' : 'Strong';
+  const color = score <= 1 ? '#E53935' : score === 2 ? '#FB8C00' : score === 3 ? '#FDD835' : score === 4 ? '#66BB6A' : '#2E7D32';
+  return { score, label, color, checks };
+};
+
 export default function RegisterScreen({ navigation }) {
   const { register } = useAuth();
   const [name, setName]         = useState('');
@@ -14,13 +29,15 @@ export default function RegisterScreen({ navigation }) {
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
 
+  const strength = password ? getPasswordStrength(password) : null;
+
   const handleRegister = async () => {
     setError('');
     if (!name.trim() || !email.trim() || !password || !confirm) {
       setError('All fields are required.'); return;
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters.'); return;
+    if (strength && strength.score < 5) {
+      setError('Please use a strong password meeting all requirements below.'); return;
     }
     if (password !== confirm) {
       setError('Passwords do not match.'); return;
@@ -95,7 +112,7 @@ export default function RegisterScreen({ navigation }) {
           <Text style={styles.label}>Password</Text>
           <TextInput
             mode="outlined"
-            placeholder="Min. 6 characters"
+            placeholder="Min. 8 chars, uppercase, number, special"
             value={password}
             onChangeText={(v) => { setPassword(v); setError(''); }}
             secureTextEntry={!showPass}
@@ -112,6 +129,38 @@ export default function RegisterScreen({ navigation }) {
             activeOutlineColor={Colors.primary}
             theme={{ roundness: Radii.md }}
           />
+
+          {/* Password strength meter */}
+          {password.length > 0 && strength && (
+            <View style={styles.strengthBox}>
+              {/* Bar */}
+              <View style={styles.strengthBarRow}>
+                {[1,2,3,4,5].map(i => (
+                  <View key={i} style={[styles.strengthSegment, { backgroundColor: i <= strength.score ? strength.color : Colors.border }]} />
+                ))}
+                <Text style={[styles.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
+              </View>
+              {/* Checklist */}
+              <View style={styles.checkList}>
+                {[
+                  { key: 'length',    text: 'At least 8 characters' },
+                  { key: 'uppercase', text: 'One uppercase letter (A-Z)' },
+                  { key: 'lowercase', text: 'One lowercase letter (a-z)' },
+                  { key: 'number',    text: 'One number (0-9)' },
+                  { key: 'special',   text: 'One special character (!@#$%)' },
+                ].map(({ key, text }) => (
+                  <View key={key} style={styles.checkRow}>
+                    <Text style={[styles.checkIcon, { color: strength.checks[key] ? Colors.success : Colors.danger }]}>
+                      {strength.checks[key] ? '✓' : '✗'}
+                    </Text>
+                    <Text style={[styles.checkText, { color: strength.checks[key] ? Colors.success : Colors.textMuted }]}>
+                      {text}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           <Text style={styles.label}>Confirm Password</Text>
           <TextInput
@@ -201,4 +250,13 @@ const styles = StyleSheet.create({
   dividerText: { marginHorizontal: Spacing.sm, color: Colors.textMuted, fontSize: 12, fontWeight: '600' },
   btnOutline:  { borderRadius: Radii.md, borderColor: Colors.primary, borderWidth: 1.5 },
   footer:      { textAlign: 'center', color: Colors.textMuted, fontSize: 12, marginBottom: Spacing.xl, marginTop: 4 },
+
+  strengthBox:     { backgroundColor: '#f9fafb', borderRadius: Radii.md, padding: Spacing.sm, marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.border },
+  strengthBarRow:  { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
+  strengthSegment: { flex: 1, height: 5, borderRadius: 3 },
+  strengthLabel:   { fontSize: 12, fontWeight: '700', marginLeft: 6 },
+  checkList:       { gap: 4 },
+  checkRow:        { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  checkIcon:       { fontSize: 12, fontWeight: '800', width: 14 },
+  checkText:       { fontSize: 12 },
 });

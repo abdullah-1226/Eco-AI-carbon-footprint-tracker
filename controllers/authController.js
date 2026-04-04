@@ -1,9 +1,21 @@
 const crypto = require('crypto');
-const User = require('../models/User');
+const jwt    = require('jsonwebtoken');
+const User   = require('../models/User');
 const nodemailer = require('nodemailer');
 const { OAuth2Client } = require('google-auth-library');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// ─── Password strength validator ─────────────────────────────────────────────
+const validatePasswordStrength = (password) => {
+    if (password.length < 8)               return 'Password must be at least 8 characters.';
+    if (!/[A-Z]/.test(password))           return 'Password must contain at least one uppercase letter.';
+    if (!/[a-z]/.test(password))           return 'Password must contain at least one lowercase letter.';
+    if (!/[0-9]/.test(password))           return 'Password must contain at least one number.';
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password))
+                                           return 'Password must contain at least one special character (e.g. !@#$%).';
+    return null; // valid
+};
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -49,6 +61,11 @@ exports.register = async (req, res, next) => {
 
         if (!password) {
             return res.status(400).json({ success: false, error: 'Password is required' });
+        }
+
+        const strengthError = validatePasswordStrength(password);
+        if (strengthError) {
+            return res.status(400).json({ success: false, error: strengthError });
         }
 
         const user = await User.create({
@@ -186,6 +203,86 @@ exports.googleUserInfoAuth = async (req, res, next) => {
     }
 };
 
+// ─── @route  GET /api/auth/google/init ──────────────────────────────────────
+// Redirects browser to Google's OAuth consent page
+// Works on ALL platforms: web, mobile WebBrowser, desktop, Chrome
+exports.googleOAuthInit = (req, res) => {
+    const params = new URLSearchParams({
+        client_id:     process.env.GOOGLE_CLIENT_ID,
+        redirect_uri:  'http://localhost:3000/api/auth/google/callback',
+        response_type: 'code',
+        scope:         'openid email profile',
+        access_type:   'offline',
+    });
+    res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+};
+
+// ─── @route  GET /api/auth/google/callback ───────────────────────────────────
+// Google redirects here after user grants permission
+exports.googleOAuthCallback = async (req, res) => {
+    try {
+        const { code, error } = req.query;
+
+        if (error || !code) {
+            return res.redirect(`http://localhost:8081?googleError=${encodeURIComponent('Google sign-in was cancelled.')}`);
+        }
+
+        const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+        if (!clientSecret || clientSecret === 'your_google_client_secret_here') {
+            return res.redirect(`http://localhost:8081?googleError=${encodeURIComponent('Google Client Secret not configured in .env')}`);
+        }
+
+        // Exchange code for tokens
+        const tokenRes = await require('axios').post('https://oauth2.googleapis.com/token', {
+            code,
+            client_id:     process.env.GOOGLE_CLIENT_ID,
+            client_secret: clientSecret,
+            redirect_uri:  'http://localhost:3000/api/auth/google/callback',
+            grant_type:    'authorization_code',
+        });
+
+        const { id_token } = tokenRes.data;
+
+        // Verify ID token and extract user info
+        const ticket = await googleClient.verifyIdToken({
+            idToken:  id_token,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        const { sub: googleId, email, name, picture, email_verified } = ticket.getPayload();
+
+        if (!email_verified) {
+            return res.redirect(`http://localhost:8081?googleError=${encodeURIComponent('Google email is not verified.')}`);
+        }
+
+        // Find or create user — auto-link if email already exists (no verification needed)
+        // Google has already verified the email, so we trust it completely
+        let user = await User.findOne({ $or: [{ googleId }, { email }] });
+        if (user) {
+            // Always update Google fields — links existing email/password accounts seamlessly
+            user.googleId = user.googleId || googleId;
+            user.avatar   = user.avatar   || picture;
+            user.provider = 'google';
+            await user.save({ validateBeforeSave: false });
+        } else {
+            // Brand new user — create account instantly, no verification required
+            user = await User.create({ name, email, googleId, avatar: picture, provider: 'google', role: 'user' });
+        }
+
+        const jwtToken = user.getSignedJwtToken();
+        const userData = encodeURIComponent(JSON.stringify({
+            id: user._id, name: user.name, email: user.email,
+            role: user.role, avatar: user.avatar, provider: user.provider,
+        }));
+
+        // Redirect back to frontend with token — user is now fully logged in
+        res.redirect(`http://localhost:8081?googleToken=${jwtToken}&googleUser=${userData}`);
+
+    } catch (err) {
+        console.error('Google OAuth callback error:', err.message);
+        res.redirect(`http://localhost:8081?googleError=${encodeURIComponent('Google sign-in failed. Please try again.')}`);
+    }
+};
+
 // ─── @route  GET /api/auth/me ────────────────────────────────────────────────
 exports.getMe = async (req, res, next) => {
     try {
@@ -226,6 +323,11 @@ exports.updatePassword = async (req, res, next) => {
 
         if (!(await user.matchPassword(req.body.currentPassword))) {
             return res.status(401).json({ success: false, error: 'Current password is incorrect' });
+        }
+
+        const strengthError = validatePasswordStrength(req.body.newPassword);
+        if (strengthError) {
+            return res.status(400).json({ success: false, error: strengthError });
         }
 
         user.password = req.body.newPassword;
@@ -283,8 +385,12 @@ exports.resetPassword = async (req, res, next) => {
     try {
         const { resettoken } = req.params;
 
-        if (!req.body.password || req.body.password.length < 6) {
-            return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+        if (!req.body.password) {
+            return res.status(400).json({ success: false, error: 'Password is required' });
+        }
+        const strengthError = validatePasswordStrength(req.body.password);
+        if (strengthError) {
+            return res.status(400).json({ success: false, error: strengthError });
         }
 
         // Decode token header to get user id without verifying (we need the password first)

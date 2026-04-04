@@ -15,11 +15,18 @@ import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 import ResetPasswordScreen  from '../screens/auth/ResetPasswordScreen';
 
 // App screens
-import HomeScreen           from '../screens/posts/HomeScreen';
-import PostDetailScreen     from '../screens/posts/PostDetailScreen';
-import CreatePostScreen     from '../screens/posts/CreatePostScreen';
 import DashboardScreen      from '../screens/dashboard/DashboardScreen';
+import LogActivityScreen    from '../screens/activity/LogActivityScreen';
+import ReportsScreen        from '../screens/reports/ReportsScreen';
+import ChatbotScreen        from '../screens/chatbot/ChatbotScreen';
+import LeaderboardScreen    from '../screens/leaderboard/LeaderboardScreen';
 import ProfileScreen        from '../screens/profile/ProfileScreen';
+
+// New feature screens
+import AlertsScreen         from '../screens/alerts/AlertsScreen';
+import ShareScreen          from '../screens/share/ShareScreen';
+import EcoSpotsScreen       from '../screens/ecospots/EcoSpotsScreen';
+import OffsetScreen         from '../screens/offset/OffsetScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -48,7 +55,7 @@ const headerOptions = {
   headerShadowVisible: false,
 };
 
-function HomeTabs() {
+function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={{
@@ -64,19 +71,43 @@ function HomeTabs() {
       }}
     >
       <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{
-          title: '🌿 EcoTrack — Feed',
-          tabBarIcon: ({ focused }) => <TabBarIcon emoji="🏠" label="Feed" focused={focused} />,
-        }}
-      />
-      <Tab.Screen
         name="Dashboard"
         component={DashboardScreen}
         options={{
-          title: '📊 Dashboard',
-          tabBarIcon: ({ focused }) => <TabBarIcon emoji="📊" label="Stats" focused={focused} />,
+          title: '🌿 EcoTrack AI',
+          tabBarIcon: ({ focused }) => <TabBarIcon emoji="🏠" label="Home" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="LogActivity"
+        component={LogActivityScreen}
+        options={{
+          title: '➕ Log Activity',
+          tabBarIcon: ({ focused }) => <TabBarIcon emoji="➕" label="Log" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Reports"
+        component={ReportsScreen}
+        options={{
+          title: '📊 Reports',
+          tabBarIcon: ({ focused }) => <TabBarIcon emoji="📊" label="Reports" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Chatbot"
+        component={ChatbotScreen}
+        options={{
+          title: '🤖 Eco Coach',
+          tabBarIcon: ({ focused }) => <TabBarIcon emoji="🤖" label="Coach" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Leaderboard"
+        component={LeaderboardScreen}
+        options={{
+          title: '🏆 Leaderboard',
+          tabBarIcon: ({ focused }) => <TabBarIcon emoji="🏆" label="Ranks" focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -91,7 +122,6 @@ function HomeTabs() {
   );
 }
 
-// Auth stack — shown when user is NOT logged in
 function AuthStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
@@ -103,13 +133,14 @@ function AuthStack() {
   );
 }
 
-// App stack — shown when user IS logged in
 function AppStack() {
   return (
     <Stack.Navigator screenOptions={{ ...headerOptions, animation: 'slide_from_right' }}>
-      <Stack.Screen name="MainTabs"   component={HomeTabs}         options={{ headerShown: false }} />
-      <Stack.Screen name="PostDetail" component={PostDetailScreen} options={{ title: 'Post Detail' }} />
-      <Stack.Screen name="CreatePost" component={CreatePostScreen} options={{ title: 'New Post' }} />
+      <Stack.Screen name="MainTabs"  component={MainTabs}       options={{ headerShown: false }} />
+      <Stack.Screen name="Alerts"    component={AlertsScreen}   options={{ title: '🔔 Alerts', headerShown: false }} />
+      <Stack.Screen name="Share"     component={ShareScreen}    options={{ title: '📤 Share Score', headerShown: false }} />
+      <Stack.Screen name="EcoSpots"  component={EcoSpotsScreen} options={{ title: '🗺️ Eco Spots', headerShown: false }} />
+      <Stack.Screen name="Offset"    component={OffsetScreen}   options={{ title: '🌍 Carbon Offset', headerShown: false }} />
     </Stack.Navigator>
   );
 }

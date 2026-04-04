@@ -7,8 +7,8 @@ import storage from '../../utils/storage';
 import { Colors, Shadow, Radii, Spacing } from '../../theme';
 
 export default function ResetPasswordScreen({ navigation, route }) {
-  // Token may come from deep link params or user can paste it manually
-  const [token, setToken]         = useState(route?.params?.token || '');
+  const token                      = route?.params?.token || '';
+  const userName                   = route?.params?.userName || '';
   const [password, setPassword]   = useState('');
   const [confirm, setConfirm]     = useState('');
   const [showPass, setShowPass]   = useState(false);
@@ -16,18 +16,18 @@ export default function ResetPasswordScreen({ navigation, route }) {
   const [success, setSuccess]     = useState(false);
   const [error, setError]         = useState('');
 
-  const { login } = useAuth();
+  useAuth();
 
   const handleReset = async () => {
     setError('');
-    if (!token.trim())    { setError('Please enter your reset code.'); return; }
+    if (!token)           { setError('Invalid session. Please go back and try again.'); return; }
     if (!password)        { setError('Please enter a new password.'); return; }
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     if (password !== confirm) { setError('Passwords do not match.'); return; }
 
     setLoading(true);
     try {
-      const res = await resetPassword(token.trim(), password);
+      const res = await resetPassword(token, password);
       // Backend returns a new JWT — auto login the user
       await storage.setItem('token', res.data.token);
       setSuccess(true);
@@ -68,13 +68,13 @@ export default function ResetPasswordScreen({ navigation, route }) {
         <View style={styles.hero}>
           <Text style={styles.heroIcon}>🔑</Text>
           <Text style={styles.heroTitle}>Set New Password</Text>
-          <Text style={styles.heroSub}>Enter the code from your email</Text>
+          <Text style={styles.heroSub}>{userName ? `Hi ${userName}, choose a new password` : 'Choose a strong new password'}</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Reset Password</Text>
           <Text style={styles.cardSubtitle}>
-            Enter the reset code from your email and choose a new password.
+            Your identity has been verified. Enter and confirm your new password below.
           </Text>
 
           {error ? (
@@ -83,23 +83,9 @@ export default function ResetPasswordScreen({ navigation, route }) {
             </View>
           ) : null}
 
-          {/* Reset Token */}
-          <Text style={styles.label}>Reset Code <Text style={styles.required}>*</Text></Text>
-          <TextInput
-            mode="outlined"
-            placeholder="Paste reset code from email"
-            value={token}
-            onChangeText={(v) => { setToken(v); setError(''); }}
-            autoCapitalize="none"
-            left={<TextInput.Icon icon="key-outline" color={Colors.primary} />}
-            style={styles.input}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.primary}
-            theme={{ roundness: Radii.md }}
-          />
-          <HelperText type="info" style={styles.helperText}>
-            Copy the code from the reset link in your email
-          </HelperText>
+          <View style={styles.alertInfo}>
+            <Text style={styles.alertInfoText}>🔒  Secure JWT session — expires in 10 minutes</Text>
+          </View>
 
           {/* New Password */}
           <Text style={styles.label}>New Password <Text style={styles.required}>*</Text></Text>
@@ -167,7 +153,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
             contentStyle={styles.btnContent}
             labelStyle={{ color: Colors.primary }}
           >
-            Resend Reset Email
+            Request New Code
           </Button>
 
           <Button
@@ -211,8 +197,12 @@ const styles = StyleSheet.create({
   label:       { fontSize: 13, fontWeight: '700', color: Colors.dark, marginTop: Spacing.sm, marginBottom: 4 },
   required:    { color: Colors.danger },
   input:       { backgroundColor: Colors.white, marginBottom: 2 },
-  helperText:  { color: Colors.textMuted },
   helperOk:    { color: Colors.success },
+  alertInfo: {
+    backgroundColor: Colors.successLight, borderLeftWidth: 4, borderLeftColor: Colors.success,
+    borderRadius: Radii.sm, padding: Spacing.sm + 4, marginBottom: Spacing.md,
+  },
+  alertInfoText: { color: Colors.primaryDark, fontSize: 12, fontWeight: '600' },
   btnPrimary:  { marginTop: Spacing.md, borderRadius: Radii.md },
   btnOutline:  { borderRadius: Radii.md, borderColor: Colors.primary, borderWidth: 1.5 },
   btnContent:  { height: 50 },

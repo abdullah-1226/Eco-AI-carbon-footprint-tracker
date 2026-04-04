@@ -24,7 +24,12 @@ export const AuthProvider = ({ children }) => {
       if (storedToken) {
         setToken(storedToken);
         const res = await getMe();
-        setUser(res.data.data);
+        // Guard: if a new login (e.g. Google OAuth redirect) replaced the token
+        // while getMe() was in-flight, don't overwrite with stale old-user data
+        const currentToken = await storage.getItem('token');
+        if (currentToken === storedToken) {
+          setUser(res.data.data);
+        }
       }
     } catch {
       await storage.removeItem('token');
@@ -65,6 +70,22 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
+  // Universal — backend OAuth flow returns token + user directly
+  // Saves token first, then fetches fresh user data from MongoDB
+  const loginWithGoogleToken = async (token, user) => {
+    // Save token immediately so getMe() interceptor picks it up
+    await storage.setItem('token', token);
+    setToken(token);
+    setUser(user); // show immediately from URL params for instant UX
+    // Then fetch fresh, authoritative data from MongoDB
+    try {
+      const res = await getMe();
+      setUser(res.data.data);
+    } catch {
+      // If getMe fails, URL-param user is still set — not a critical error
+    }
+  };
+
   const logout = async () => {
     // Always clear local state regardless of backend/storage errors
     try { await apiLogout(); } catch { /* token may already be expired — that's fine */ }
@@ -79,7 +100,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, loginWithGoogle, loginWithGoogleUserInfo, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, loginWithGoogle, loginWithGoogleUserInfo, loginWithGoogleToken, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

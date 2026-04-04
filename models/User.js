@@ -22,7 +22,7 @@ const UserSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        minlength: 6,
+        minlength: 8,
         select: false
     },
     role: {
@@ -48,6 +48,10 @@ const UserSchema = new mongoose.Schema({
     // Password reset fields
     resetPasswordToken: String,
     resetPasswordExpire: Date,
+
+    // Notifications & alerts
+    fcmToken:       { type: String, default: null },
+    dailyThreshold: { type: Number, default: 10 },  // kg CO₂/day threshold for alerts
 
     createdAt: {
         type: Date,

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, TouchableOpacity } from 'react-native';
 import { Text, TextInput, Button, Divider, List } from 'react-native-paper';
 import { updateDetails, updatePassword } from '../../api/api';
 import { useAuth } from '../../context/AuthContext';
 import { Colors, Shadow, Radii, Spacing } from '../../theme';
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const { user, logout, refreshUser } = useAuth();
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
@@ -190,6 +190,28 @@ export default function ProfileScreen() {
           </Button>
         </View>
 
+        {/* Features */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>🚀  More Features</Text>
+          <Text style={styles.cardSub}>Access all EcoTrack AI modules</Text>
+          <Divider style={styles.divider} />
+          {[
+            { icon: '🔔', label: 'Alerts & Notifications', screen: 'Alerts',   desc: 'View emission alerts & reminders' },
+            { icon: '📤', label: 'Share Eco Score',        screen: 'Share',    desc: 'Share your progress on social media' },
+            { icon: '🗺️', label: 'Nearby Eco Spots',       screen: 'EcoSpots', desc: 'Find recycling & EV charging near you' },
+            { icon: '🌍', label: 'Carbon Offset',          screen: 'Offset',   desc: 'Neutralize your carbon footprint' },
+          ].map((f, i) => (
+            <TouchableOpacity key={i} style={styles.featureRow} onPress={() => navigation.navigate(f.screen)}>
+              <View style={styles.featureIconBox}><Text style={styles.featureIcon}>{f.icon}</Text></View>
+              <View style={styles.featureBody}>
+                <Text style={styles.featureLabel}>{f.label}</Text>
+                <Text style={styles.featureDesc}>{f.desc}</Text>
+              </View>
+              <Text style={styles.featureArrow}>›</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         {/* Danger Zone */}
         <View style={styles.dangerCard}>
           <Text style={styles.dangerTitle}>⚠️  Danger Zone</Text>
@@ -259,4 +281,18 @@ const styles = StyleSheet.create({
   dangerTitle: { fontSize: 15, fontWeight: '800', color: '#842029', marginBottom: 4 },
   dangerSub: { fontSize: 13, color: '#842029', opacity: 0.75, marginBottom: Spacing.md },
   logoutBtn: { borderRadius: Radii.md },
+
+  featureRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  featureIconBox: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginRight: Spacing.sm,
+  },
+  featureIcon:  { fontSize: 20 },
+  featureBody:  { flex: 1 },
+  featureLabel: { fontSize: 14, fontWeight: '700', color: Colors.dark },
+  featureDesc:  { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+  featureArrow: { fontSize: 22, color: Colors.textMuted, fontWeight: '300' },
 });

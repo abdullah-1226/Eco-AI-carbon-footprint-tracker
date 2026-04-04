@@ -10,15 +10,25 @@ connectDB();
 const authRoutes      = require('./routes/authRoutes');
 const postRoutes      = require('./routes/postRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const activityRoutes  = require('./routes/activityRoutes');
+const chatbotRoutes   = require('./routes/chatbotRoutes');
+const mapsRoutes      = require('./routes/mapsRoutes');
+const alertRoutes     = require('./routes/alertRoutes');
+const offsetRoutes    = require('./routes/offsetRoutes');
 
 const app = express();
 
 app.use(express.json());
 app.use(cors());
 
-app.use('/api/auth',      authRoutes);
-app.use('/api/posts',     postRoutes);
-app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/auth',       authRoutes);
+app.use('/api/posts',      postRoutes);
+app.use('/api/dashboard',  dashboardRoutes);
+app.use('/api/activities', activityRoutes);
+app.use('/api/chatbot',    chatbotRoutes);
+app.use('/api/maps',       mapsRoutes);
+app.use('/api/alerts',     alertRoutes);
+app.use('/api/offset',     offsetRoutes);
 
 // Welcome route
 app.get('/', (req, res) => {
@@ -63,6 +73,37 @@ app.use('*', (req, res) => {
 });
 
 app.use(errorHandler);
+
+// ─── Daily Reminder Cron (8 PM every day) ────────────────────────────────────
+try {
+    const cron          = require('node-cron');
+    const User          = require('./models/User');
+    const Activity      = require('./models/Activity');
+    const EmissionAlert = require('./models/EmissionAlert');
+
+    cron.schedule('0 20 * * *', async () => {
+        try {
+            const users = await User.find({}).select('_id');
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            for (const u of users) {
+                const hasActivity = await Activity.findOne({ user: u._id, date: { $gte: today } });
+                if (!hasActivity) {
+                    await EmissionAlert.create({
+                        user:      u._id,
+                        alertType: 'daily_reminder',
+                        title:     '🌿 Daily Reminder',
+                        message:   "You haven't logged any activities today. Keep your eco streak alive!",
+                        icon:      '⏰',
+                    });
+                }
+            }
+            console.log('✅ Daily reminder cron completed');
+        } catch (e) { console.error('❌ Cron error:', e.message); }
+    });
+    console.log('⏰  Cron scheduler: daily reminders enabled (8 PM)');
+} catch (_) {
+    console.log('⚠️  node-cron not available — daily reminders disabled');
+}
 
 const PORT = process.env.PORT || 3000;
 
