@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Text, TextInput, Button, HelperText } from 'react-native-paper';
 import { resetPassword } from '../../api/api';
@@ -6,23 +6,48 @@ import { useAuth } from '../../context/AuthContext';
 import storage from '../../utils/storage';
 import { Colors, Shadow, Radii, Spacing } from '../../theme';
 
+const getPasswordStrength = (pwd) => {
+  const checks = {
+    length:    pwd.length >= 8,
+    uppercase: /[A-Z]/.test(pwd),
+    lowercase: /[a-z]/.test(pwd),
+    number:    /[0-9]/.test(pwd),
+    special:   /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
+  };
+  const score = Object.values(checks).filter(Boolean).length;
+  const label = score <= 1 ? 'Very Weak' : score === 2 ? 'Weak' : score === 3 ? 'Fair' : score === 4 ? 'Good' : 'Strong';
+  const color = score <= 1 ? '#E53935' : score === 2 ? '#FB8C00' : score === 3 ? '#FDD835' : score === 4 ? '#66BB6A' : '#2E7D32';
+  return { score, label, color, checks };
+};
+
 export default function ResetPasswordScreen({ navigation, route }) {
   const token                      = route?.params?.token || '';
   const userName                   = route?.params?.userName || '';
+  const email                      = route?.params?.email || '';
   const [password, setPassword]   = useState('');
   const [confirm, setConfirm]     = useState('');
   const [showPass, setShowPass]   = useState(false);
   const [loading, setLoading]     = useState(false);
   const [success, setSuccess]     = useState(false);
   const [error, setError]         = useState('');
+  const [successEmail, setSuccessEmail] = useState('');
+
+  const strength = password ? getPasswordStrength(password) : null;
 
   useAuth();
 
+  // Clear fields on mount to prevent autofill from injecting old password
+  useEffect(() => {
+    setPassword('');
+    setConfirm('');
+    setError('');
+  }, []);
+
   const handleReset = async () => {
     setError('');
-    if (!token)           { setError('Invalid session. Please go back and try again.'); return; }
-    if (!password)        { setError('Please enter a new password.'); return; }
-    if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    if (!token)              { setError('Invalid session. Please go back and try again.'); return; }
+    if (!password)           { setError('Please enter a new password.'); return; }
+    if (strength && strength.score < 5) { setError('Please use a strong password meeting all requirements below.'); return; }
     if (password !== confirm) { setError('Passwords do not match.'); return; }
 
     setLoading(true);
@@ -31,6 +56,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
       // Backend returns a new JWT — auto login the user
       await storage.setItem('token', res.data.token);
       setSuccess(true);
+      setSuccessEmail(email);
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid or expired reset token. Please request a new one.');
     } finally {
@@ -48,7 +74,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
         </Text>
         <Button
           mode="contained"
-          onPress={() => navigation.navigate('Login')}
+          onPress={() => navigation.navigate('Login', { prefillEmail: successEmail })}
           style={styles.btnPrimary}
           contentStyle={styles.btnContent}
           buttonColor={Colors.primary}
@@ -91,10 +117,12 @@ export default function ResetPasswordScreen({ navigation, route }) {
           <Text style={styles.label}>New Password <Text style={styles.required}>*</Text></Text>
           <TextInput
             mode="outlined"
-            placeholder="Min. 6 characters"
+            placeholder="Min. 8 chars, uppercase, number, special"
             value={password}
             onChangeText={(v) => { setPassword(v); setError(''); }}
             secureTextEntry={!showPass}
+            autoComplete="new-password"
+            textContentType="newPassword"
             left={<TextInput.Icon icon="lock-outline" color={Colors.primary} />}
             right={
               <TextInput.Icon
@@ -109,6 +137,36 @@ export default function ResetPasswordScreen({ navigation, route }) {
             theme={{ roundness: Radii.md }}
           />
 
+          {/* Password strength meter */}
+          {password.length > 0 && strength && (
+            <View style={styles.strengthBox}>
+              <View style={styles.strengthBarRow}>
+                {[1,2,3,4,5].map(i => (
+                  <View key={i} style={[styles.strengthSegment, { backgroundColor: i <= strength.score ? strength.color : Colors.border }]} />
+                ))}
+                <Text style={[styles.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
+              </View>
+              <View style={styles.checkList}>
+                {[
+                  { key: 'length',    text: 'At least 8 characters' },
+                  { key: 'uppercase', text: 'One uppercase letter (A-Z)' },
+                  { key: 'lowercase', text: 'One lowercase letter (a-z)' },
+                  { key: 'number',    text: 'One number (0-9)' },
+                  { key: 'special',   text: 'One special character (!@#$%)' },
+                ].map(({ key, text }) => (
+                  <View key={key} style={styles.checkRow}>
+                    <Text style={[styles.checkIcon, { color: strength.checks[key] ? Colors.success : Colors.danger }]}>
+                      {strength.checks[key] ? '✓' : '✗'}
+                    </Text>
+                    <Text style={[styles.checkText, { color: strength.checks[key] ? Colors.success : Colors.textMuted }]}>
+                      {text}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
           {/* Confirm Password */}
           <Text style={styles.label}>Confirm Password <Text style={styles.required}>*</Text></Text>
           <TextInput
@@ -117,6 +175,8 @@ export default function ResetPasswordScreen({ navigation, route }) {
             value={confirm}
             onChangeText={(v) => { setConfirm(v); setError(''); }}
             secureTextEntry={!showPass}
+            autoComplete="new-password"
+            textContentType="newPassword"
             left={
               <TextInput.Icon
                 icon="lock-check-outline"
@@ -208,6 +268,15 @@ const styles = StyleSheet.create({
   btnContent:  { height: 50 },
   btnLabel:    { fontSize: 16, fontWeight: '700' },
   footer:      { textAlign: 'center', color: Colors.textMuted, fontSize: 12, marginBottom: Spacing.xl, marginTop: 4 },
+
+  strengthBox:     { backgroundColor: '#f9fafb', borderRadius: Radii.md, padding: Spacing.sm, marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.border },
+  strengthBarRow:  { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
+  strengthSegment: { flex: 1, height: 5, borderRadius: 3 },
+  strengthLabel:   { fontSize: 12, fontWeight: '700', marginLeft: 6 },
+  checkList:       { gap: 4 },
+  checkRow:        { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  checkIcon:       { fontSize: 12, fontWeight: '800', width: 14 },
+  checkText:       { fontSize: 12 },
   // Success
   successContainer: {
     flex: 1, backgroundColor: Colors.background,

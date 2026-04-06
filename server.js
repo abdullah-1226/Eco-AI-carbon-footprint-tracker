@@ -1,6 +1,7 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/error');
 
@@ -19,7 +20,8 @@ const offsetRoutes    = require('./routes/offsetRoutes');
 const app = express();
 
 app.use(express.json());
-app.use(cors());
+app.use(cookieParser());
+app.use(cors({ origin: true, credentials: true }));
 
 app.use('/api/auth',       authRoutes);
 app.use('/api/posts',      postRoutes);

@@ -3,6 +3,7 @@ const router = express.Router();
 const {
     register,
     login,
+    checkEmail,
     googleAuth,
     googleUserInfoAuth,
     googleOAuthInit,
@@ -18,6 +19,7 @@ const {
 const { protect } = require('../middleware/auth');
 
 // Public routes
+router.get('/check-email',               checkEmail);
 router.post('/register',                 register);
 router.post('/login',                    login);
 router.post('/google',                   googleAuth);           // Google OAuth (native — idToken)

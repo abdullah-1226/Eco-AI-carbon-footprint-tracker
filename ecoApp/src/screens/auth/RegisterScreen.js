@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from 'react-native';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useAuth } from '../../context/AuthContext';
+import { checkEmail as apiCheckEmail } from '../../api/api';
 import { Colors, Shadow, Radii, Spacing } from '../../theme';
 
 // Returns { score: 0-4, label, color, checks }
@@ -21,13 +22,34 @@ const getPasswordStrength = (pwd) => {
 
 export default function RegisterScreen({ navigation }) {
   const { register } = useAuth();
-  const [name, setName]         = useState('');
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm]   = useState('');
-  const [showPass, setShowPass] = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState('');
+  const [name, setName]               = useState('');
+  const [email, setEmail]             = useState('');
+  const [password, setPassword]       = useState('');
+  const [confirm, setConfirm]         = useState('');
+  const [showPass, setShowPass]       = useState(false);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState('');
+  const [emailError, setEmailError]   = useState('');
+  const [emailChecking, setEmailChecking] = useState(false);
+  const emailDebounceRef = useRef(null);
+
+  // Real-time email duplicate check (debounced 600ms)
+  useEffect(() => {
+    setEmailError('');
+    if (!email || !/\S+@\S+\.\S+/.test(email)) return;
+    setEmailChecking(true);
+    if (emailDebounceRef.current) clearTimeout(emailDebounceRef.current);
+    emailDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await apiCheckEmail(email.trim());
+        if (res.data.exists) {
+          setEmailError('This email is already registered. Please sign in or use a different email.');
+        }
+      } catch { /* ignore network errors during check */ }
+      finally { setEmailChecking(false); }
+    }, 600);
+    return () => clearTimeout(emailDebounceRef.current);
+  }, [email]);
 
   const strength = password ? getPasswordStrength(password) : null;
 
@@ -35,6 +57,12 @@ export default function RegisterScreen({ navigation }) {
     setError('');
     if (!name.trim() || !email.trim() || !password || !confirm) {
       setError('All fields are required.'); return;
+    }
+    if (emailError) {
+      setError(emailError); return;
+    }
+    if (emailChecking) {
+      setError('Please wait while we verify your email.'); return;
     }
     if (strength && strength.score < 5) {
       setError('Please use a strong password meeting all requirements below.'); return;
@@ -87,6 +115,9 @@ export default function RegisterScreen({ navigation }) {
             placeholder="Your full name"
             value={name}
             onChangeText={(v) => { setName(v); setError(''); }}
+            autoComplete="off"
+            autoCorrect={false}
+            textContentType="none"
             left={<TextInput.Icon icon="account-outline" color={Colors.primary} />}
             style={styles.input}
             outlineColor={Colors.border}
@@ -99,15 +130,24 @@ export default function RegisterScreen({ navigation }) {
             mode="outlined"
             placeholder="you@example.com"
             value={email}
-            onChangeText={(v) => { setEmail(v); setError(''); }}
+            onChangeText={(v) => { setEmail(v); setError(''); setEmailError(''); }}
             keyboardType="email-address"
             autoCapitalize="none"
+            autoComplete="username"
+            autoCorrect={false}
+            textContentType="username"
             left={<TextInput.Icon icon="email-outline" color={Colors.primary} />}
+            right={emailChecking ? <TextInput.Icon icon="loading" color={Colors.textMuted} /> :
+                   emailError    ? <TextInput.Icon icon="alert-circle" color={Colors.danger} /> :
+                   email && /\S+@\S+\.\S+/.test(email) ? <TextInput.Icon icon="check-circle" color={Colors.success} /> : null}
             style={styles.input}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.primary}
+            outlineColor={emailError ? Colors.danger : Colors.border}
+            activeOutlineColor={emailError ? Colors.danger : Colors.primary}
             theme={{ roundness: Radii.md }}
           />
+          {emailError ? (
+            <Text style={styles.emailError}>⚠️  {emailError}</Text>
+          ) : null}
 
           <Text style={styles.label}>Password</Text>
           <TextInput
@@ -116,6 +156,8 @@ export default function RegisterScreen({ navigation }) {
             value={password}
             onChangeText={(v) => { setPassword(v); setError(''); }}
             secureTextEntry={!showPass}
+            autoComplete="new-password"
+            textContentType="newPassword"
             left={<TextInput.Icon icon="lock-outline" color={Colors.primary} />}
             right={
               <TextInput.Icon
@@ -169,6 +211,8 @@ export default function RegisterScreen({ navigation }) {
             value={confirm}
             onChangeText={(v) => { setConfirm(v); setError(''); }}
             secureTextEntry={!showPass}
+            autoComplete="new-password"
+            textContentType="newPassword"
             left={<TextInput.Icon icon="lock-check-outline" color={confirm && confirm === password ? Colors.success : Colors.primary} />}
             style={styles.input}
             outlineColor={confirm && confirm !== password ? Colors.danger : Colors.border}
@@ -240,8 +284,9 @@ const styles = StyleSheet.create({
     borderRadius: Radii.sm, padding: Spacing.sm + 4, marginBottom: Spacing.md,
   },
   alertInfoText: { color: Colors.primaryDark, fontSize: 12, fontWeight: '600' },
-  label:    { fontSize: 13, fontWeight: '700', color: Colors.dark, marginTop: Spacing.sm, marginBottom: 4 },
-  input:    { backgroundColor: Colors.white, marginBottom: 2 },
+  label:      { fontSize: 13, fontWeight: '700', color: Colors.dark, marginTop: Spacing.sm, marginBottom: 4 },
+  input:      { backgroundColor: Colors.white, marginBottom: 2 },
+  emailError: { fontSize: 12, color: Colors.danger, fontWeight: '600', marginTop: 4, marginBottom: 4 },
   btnPrimary:  { marginTop: Spacing.md, borderRadius: Radii.md },
   btnContent:  { height: 50 },
   btnLabel:    { fontSize: 16, fontWeight: '700', letterSpacing: 0.3 },

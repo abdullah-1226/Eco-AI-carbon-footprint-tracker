@@ -20,6 +20,7 @@ export default function ForgotPasswordScreen({ navigation }) {
       navigation.navigate('ResetPassword', {
         token:    res.data.resetToken,
         userName: res.data.userName,
+        email:    email.trim(),
       });
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to verify email. Please try again.');

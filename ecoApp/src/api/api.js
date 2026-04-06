@@ -18,6 +18,7 @@ api.interceptors.request.use(async (config) => {
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 export const register        = (data)        => api.post('/auth/register', data);
+export const checkEmail      = (email)       => api.get('/auth/check-email', { params: { email } });
 export const login           = (data)        => api.post('/auth/login', data);
 export const googleLogin         = (idToken)   => api.post('/auth/google', { idToken });
 export const googleUserInfoLogin = (userInfo)  => api.post('/auth/google/userinfo', { userInfo });

@@ -26,9 +26,9 @@ WebBrowser.maybeCompleteAuthSession();
 const BACKEND_URL  = 'http://localhost:3000';
 const FRONTEND_URL = 'http://localhost:8081';
 
-export default function LoginScreen({ navigation }) {
+export default function LoginScreen({ navigation, route }) {
   const { login, loginWithGoogleToken } = useAuth();
-  const [email,    setEmail]    = useState('');
+  const [email,    setEmail]    = useState(route?.params?.prefillEmail || '');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading,  setLoading]  = useState(false);

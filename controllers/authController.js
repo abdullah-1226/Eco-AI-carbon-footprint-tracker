@@ -21,6 +21,13 @@ const validatePasswordStrength = (password) => {
 
 const sendTokenResponse = (user, statusCode, res) => {
     const token = user.getSignedJwtToken();
+    const cookieOptions = {
+        expires:  new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        httpOnly: true,
+        sameSite: 'lax',
+        secure:   process.env.NODE_ENV === 'production',
+    };
+    res.cookie('token', token, cookieOptions);
     res.status(statusCode).json({
         success: true,
         token,
@@ -52,6 +59,18 @@ const sendEmail = async ({ to, subject, html }) => {
         subject,
         html
     });
+};
+
+// ─── @route  GET /api/auth/check-email?email=... ────────────────────────────
+exports.checkEmail = async (req, res, next) => {
+    try {
+        const { email } = req.query;
+        if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
+        const existing = await User.findOne({ email: email.toLowerCase().trim() });
+        res.status(200).json({ success: true, exists: !!existing });
+    } catch (error) {
+        next(error);
+    }
 };
 
 // ─── @route  POST /api/auth/register ────────────────────────────────────────
@@ -296,6 +315,7 @@ exports.getMe = async (req, res, next) => {
 // ─── @route  GET /api/auth/logout ────────────────────────────────────────────
 exports.logout = async (req, res, next) => {
     try {
+        res.cookie('token', '', { expires: new Date(0), httpOnly: true });
         res.status(200).json({ success: true, message: 'Successfully logged out' });
     } catch (error) {
         next(error);
