@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  RefreshControl, Alert,
+  RefreshControl,
 } from 'react-native';
+import { showAlert } from '../../utils/crossAlert';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getAlerts, markAlertRead, markAllAlertsRead, deleteAlert } from '../../api/api';
+import BackButton from '../../components/BackButton';
+import ScreenTransition from '../../components/ScreenTransition';
 
 const TYPE_CONFIG = {
   threshold_exceeded: { color: '#FF6B6B', bg: 'rgba(255,107,107,0.15)', label: 'Threshold Alert' },
   daily_reminder:     { color: '#FFA726', bg: 'rgba(255,167,38,0.15)',  label: 'Reminder' },
-  badge_earned:       { color: '#66BB6A', bg: 'rgba(102,187,106,0.15)', label: 'Achievement' },
+  badge_earned:       { color: '#B2D054', bg: 'rgba(178,208,84,0.15)',  label: 'Achievement' },
   milestone:          { color: '#42A5F5', bg: 'rgba(66,165,245,0.15)',  label: 'Milestone' },
   weekly_report:      { color: '#AB47BC', bg: 'rgba(171,71,188,0.15)',  label: 'Weekly Report' },
 };
@@ -65,7 +68,7 @@ export default function AlertsScreen() {
       setAlerts(res.data.data || []);
       setUnreadCount(res.data.unreadCount || 0);
     } catch {
-      Alert.alert('Error', 'Failed to load alerts');
+      showAlert('Error', 'Failed to load alerts');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -83,7 +86,7 @@ export default function AlertsScreen() {
   };
 
   const handleDelete = (id) => {
-    Alert.alert('Delete Alert', 'Remove this alert?', [
+    showAlert('Delete Alert', 'Remove this alert?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
@@ -113,9 +116,11 @@ export default function AlertsScreen() {
   }
 
   return (
+    <ScreenTransition>
     <View style={styles.container}>
+      <BackButton />
       {/* Header */}
-      <LinearGradient colors={['#1B5E20', '#2E7D32']} style={styles.header}>
+      <LinearGradient colors={['#0A1A0F', '#0C1B12']} style={styles.header}>
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.headerTitle}>🔔 Alerts</Text>
@@ -151,6 +156,7 @@ export default function AlertsScreen() {
         />
       )}
     </View>
+    </ScreenTransition>
   );
 }
 
@@ -174,14 +180,14 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  cardUnread: { borderLeftWidth: 3, borderLeftColor: '#2E7D32' },
+  cardUnread: { borderLeftWidth: 3, borderLeftColor: '#B2D054' },
   iconBox:    { width: 48, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   iconText:   { fontSize: 22 },
   cardBody:   { flex: 1 },
   cardTop:    { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   typeBadge:  { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, marginRight: 6 },
   typeText:   { fontSize: 11, fontWeight: '700' },
-  unreadDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2E7D32' },
+  unreadDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#B2D054' },
   cardTitle:  { fontSize: 14, fontWeight: '700', color: '#1A1A1A', marginBottom: 3 },
   cardMsg:    { fontSize: 13, color: '#555', lineHeight: 18 },
   cardTime:   { fontSize: 11, color: '#999', marginTop: 4 },

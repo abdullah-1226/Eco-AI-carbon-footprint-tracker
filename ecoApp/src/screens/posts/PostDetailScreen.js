@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, ScrollView, StyleSheet } from 'react-native';
+import { showAlert } from '../../utils/crossAlert';
 import { Text, Button, Chip, Divider, ActivityIndicator, Badge } from 'react-native-paper';
 import { getPost, likePost, deletePost } from '../../api/api';
 import { useAuth } from '../../context/AuthContext';
@@ -19,7 +20,7 @@ export default function PostDetailScreen({ route, navigation }) {
       const res = await getPost(postId);
       setPost(res.data.data);
     } catch {
-      Alert.alert('Error', 'Failed to load post');
+      showAlert('Error', 'Failed to load post');
       navigation.goBack();
     } finally {
       setLoading(false);
@@ -32,14 +33,14 @@ export default function PostDetailScreen({ route, navigation }) {
       await likePost(postId);
       setPost((p) => ({ ...p, likes: p.likes + 1 }));
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.error || 'Failed to like');
+      showAlert('Error', err.response?.data?.error || 'Failed to like');
     } finally {
       setLiking(false);
     }
   };
 
   const handleDelete = () => {
-    Alert.alert(
+    showAlert(
       'Delete Post',
       'This action cannot be undone. Are you sure?',
       [
@@ -50,7 +51,7 @@ export default function PostDetailScreen({ route, navigation }) {
               await deletePost(postId);
               navigation.goBack();
             } catch (err) {
-              Alert.alert('Error', err.response?.data?.error || 'Failed to delete');
+              showAlert('Error', err.response?.data?.error || 'Failed to delete');
             }
           },
         },

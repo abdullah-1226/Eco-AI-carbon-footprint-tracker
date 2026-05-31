@@ -1,7 +1,12 @@
 import axios from 'axios';
 import storage from '../utils/storage';
+import { Platform } from 'react-native';
 
-const BASE_URL = 'http://localhost:3000/api';
+const BASE_URL = __DEV__
+  ? Platform.OS === 'web'
+    ? 'http://localhost:3000/api'            // web browser
+    : 'http://192.168.18.201:3000/api'       // mobile device on same WiFi
+  : 'https://your-production-api.com/api';   // production
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -45,6 +50,7 @@ export const getAdminDashboard = ()          => api.get('/dashboard/admin');
 
 // ─── Activities ───────────────────────────────────────────────────────────────
 export const logActivity        = (data)         => api.post('/activities', data);
+export const analyzeScenario    = (data)         => api.post('/activities/analyze-scenario', data);
 export const getActivities      = (params)       => api.get('/activities', { params });
 export const getActivitySummary = ()             => api.get('/activities/summary');
 export const deleteActivity     = (id)           => api.delete(`/activities/${id}`);
@@ -55,7 +61,9 @@ export const getAISuggestions   = ()             => api.get('/activities/suggest
 // ─── Maps ─────────────────────────────────────────────────────────────────────
 export const getDistance        = (data)         => api.post('/maps/distance', data);
 export const getAutocomplete    = (input)        => api.get('/maps/autocomplete', { params: { input } });
-export const getNearbyPlaces    = (lat, lng, type) => api.get('/maps/nearby', { params: { lat, lng, type } });
+export const geocodeSearch      = (input)        => api.get('/maps/autocomplete', { params: { input } });
+export const getNearbyPlaces    = (lat, lng, type, query = '') => api.get('/maps/nearby',      { params: { lat, lng, type, query } });
+export const getRealNearbyPlaces= (lat, lng, type, query = '') => api.get('/maps/real-nearby', { params: { lat, lng, type, query } });
 
 // ─── Chatbot ──────────────────────────────────────────────────────────────────
 export const sendChatMessage    = (message, history) => api.post('/chatbot', { message, history });

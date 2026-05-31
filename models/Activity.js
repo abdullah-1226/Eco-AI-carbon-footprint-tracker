@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const ActivitySchema = new mongoose.Schema({
     user:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    category: { type: String, enum: ['transport', 'food', 'energy', 'shopping'], required: true },
+    category: { type: String, enum: ['transport', 'food', 'energy', 'shopping', 'custom'], required: true },
     subType:  { type: String, required: true },
     label:    { type: String, required: true },
     value:    { type: Number, required: true },   // km / meals / kWh / items

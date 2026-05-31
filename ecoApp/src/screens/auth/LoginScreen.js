@@ -2,15 +2,22 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, StyleSheet, KeyboardAvoidingView, Platform,
   ScrollView, TouchableOpacity, Linking, Animated,
+  Image, ImageBackground, Dimensions, StatusBar,
 } from 'react-native';
-import { Text, TextInput, Button } from 'react-native-paper';
+import { Text, TextInput } from 'react-native-paper';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../../context/AuthContext';
-import { Colors, Shadow, Radii, Spacing } from '../../theme';
-import storage from '../../utils/storage';
+import { Radii, Spacing } from '../../theme';
 import Svg, { Path } from 'react-native-svg';
 
-function GoogleIcon({ size = 22 }) {
+const { width: W, height: H } = Dimensions.get('window');
+
+// ── Dramatic misty jungle road — rays of sunlight through ancient trees ───────
+const BG_IMG = 'https://images.unsplash.com/photo-1518098268026-4e89f1a2cd8e?w=1600&q=95&fit=crop&crop=center&auto=format';
+
+function GoogleIcon({ size = 20 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -22,7 +29,6 @@ function GoogleIcon({ size = 22 }) {
 }
 
 WebBrowser.maybeCompleteAuthSession();
-
 const BACKEND_URL  = 'http://localhost:3000';
 const FRONTEND_URL = 'http://localhost:8081';
 
@@ -35,392 +41,382 @@ export default function LoginScreen({ navigation, route }) {
   const [gLoading, setGLoading] = useState(false);
   const [error,    setError]    = useState('');
 
-  // ── Animations ────────────────────────────────────────────────────────────
-  const heroOpacity   = useRef(new Animated.Value(0)).current;
-  const heroTranslate = useRef(new Animated.Value(-30)).current;
-  const cardOpacity   = useRef(new Animated.Value(0)).current;
-  const cardTranslate = useRef(new Animated.Value(40)).current;
-  const googleScale   = useRef(new Animated.Value(0.8)).current;
-  const logoRotate    = useRef(new Animated.Value(0)).current;
+  // ── Entrance animations (no moving logo) ─────────────────────────────────
+  const brandFade  = useRef(new Animated.Value(0)).current;
+  const brandSlide = useRef(new Animated.Value(-24)).current;
+  const cardFade   = useRef(new Animated.Value(0)).current;
+  const cardSlide  = useRef(new Animated.Value(50)).current;
+  const glowPulse  = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
-    // Hero slides down + fades in
+    // Brand slides down + fades in
     Animated.parallel([
-      Animated.timing(heroOpacity,   { toValue: 1, duration: 700, useNativeDriver: true }),
-      Animated.timing(heroTranslate, { toValue: 0, duration: 700, useNativeDriver: true }),
+      Animated.timing(brandFade,  { toValue: 1, duration: 900, useNativeDriver: true }),
+      Animated.spring(brandSlide, { toValue: 0, tension: 60, friction: 9, useNativeDriver: true }),
     ]).start();
 
-    // Card slides up + fades in (slight delay)
+    // Card slides up with spring
     Animated.parallel([
-      Animated.timing(cardOpacity,   { toValue: 1, duration: 700, delay: 300, useNativeDriver: true }),
-      Animated.timing(cardTranslate, { toValue: 0, duration: 700, delay: 300, useNativeDriver: true }),
+      Animated.timing(cardFade,  { toValue: 1, duration: 800, delay: 350, useNativeDriver: true }),
+      Animated.spring(cardSlide, { toValue: 0, tension: 50, friction: 10, delay: 350, useNativeDriver: true }),
     ]).start();
 
-    // Google button pops in
-    Animated.spring(googleScale, {
-      toValue: 1, delay: 700, friction: 5, tension: 80, useNativeDriver: true,
-    }).start();
-
-    // Leaf logo gentle rotation loop
+    // Subtle glow pulse behind logo
     Animated.loop(
       Animated.sequence([
-        Animated.timing(logoRotate, { toValue: 1,  duration: 2000, useNativeDriver: true }),
-        Animated.timing(logoRotate, { toValue: -1, duration: 2000, useNativeDriver: true }),
-        Animated.timing(logoRotate, { toValue: 0,  duration: 2000, useNativeDriver: true }),
+        Animated.timing(glowPulse, { toValue: 1,   duration: 2500, useNativeDriver: true }),
+        Animated.timing(glowPulse, { toValue: 0.5, duration: 2500, useNativeDriver: true }),
       ])
     ).start();
   }, []);
 
-  const logoSpin = logoRotate.interpolate({ inputRange: [-1, 1], outputRange: ['-8deg', '8deg'] });
-
-  // ── Google OAuth redirect listener ────────────────────────────────────────
+  // ── Google OAuth ──────────────────────────────────────────────────────────
   useEffect(() => {
     const handleURL = async (event) => {
       const url = event.url || event;
       if (typeof url !== 'string') return;
       try {
-        const urlObj  = new URL(url);
-        const token   = urlObj.searchParams.get('googleToken');
-        const userStr = urlObj.searchParams.get('googleUser');
-        const err     = urlObj.searchParams.get('googleError');
-        const otpRequired = urlObj.searchParams.get('googleOtpRequired');
-        const tempToken   = urlObj.searchParams.get('tempToken');
-        const otpEmail    = urlObj.searchParams.get('otpEmail');
-
-        if (err) { setError(decodeURIComponent(err)); setGLoading(false); return; }
-        if (token && userStr) {
-          await loginWithGoogleToken(token, JSON.parse(decodeURIComponent(userStr)));
-          setGLoading(false);
-        }
-        if (otpRequired === 'true' && tempToken) {
-          setGLoading(false);
-          navigation.navigate('GoogleOtp', { tempToken, otpEmail: decodeURIComponent(otpEmail || '') });
-        }
-      } catch { /* not a google callback URL */ }
+        const p     = new URL(url).searchParams;
+        const token = p.get('googleToken');
+        const uStr  = p.get('googleUser');
+        const err   = p.get('googleError');
+        if (err)           { setError(decodeURIComponent(err)); setGLoading(false); return; }
+        if (token && uStr) { await loginWithGoogleToken(token, JSON.parse(decodeURIComponent(uStr))); setGLoading(false); }
+      } catch { /* ignore */ }
     };
 
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const params  = new URLSearchParams(window.location.search);
-      const token   = params.get('googleToken');
-      const userStr = params.get('googleUser');
-      const err     = params.get('googleError');
-
-      if (err) {
-        setError(decodeURIComponent(err));
+      const p   = new URLSearchParams(window.location.search);
+      const tok = p.get('googleToken');
+      const usr = p.get('googleUser');
+      const err = p.get('googleError');
+      if (err) { setError(decodeURIComponent(err)); window.history.replaceState({}, '', FRONTEND_URL); }
+      else if (tok && usr) {
+        loginWithGoogleToken(tok, JSON.parse(decodeURIComponent(usr))).catch(() => setError('Google sign-in failed.'));
         window.history.replaceState({}, '', FRONTEND_URL);
-      } else if (token && userStr) {
-        loginWithGoogleToken(token, JSON.parse(decodeURIComponent(userStr))).catch(() => setError('Google sign-in failed.'));
-        window.history.replaceState({}, '', FRONTEND_URL);
-      } else if (params.get('googleOtpRequired') === 'true') {
-        const tempToken = params.get('tempToken');
-        const otpEmail  = params.get('otpEmail');
-        window.history.replaceState({}, '', FRONTEND_URL);
-        navigation.navigate('GoogleOtp', { tempToken, otpEmail: decodeURIComponent(otpEmail || '') });
       }
     }
-
     const sub = Linking.addEventListener('url', handleURL);
     return () => sub?.remove?.();
   }, []);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleGoogleSignIn = async () => {
-    setGLoading(true);
-    setError('');
-    const googleURL = `${BACKEND_URL}/api/auth/google/init`;
+    setGLoading(true); setError('');
     try {
       if (Platform.OS === 'web') {
-        window.location.href = googleURL;
+        window.location.href = `${BACKEND_URL}/api/auth/google/init`;
       } else {
-        const result = await WebBrowser.openAuthSessionAsync(googleURL, 'ecotrack://');
+        const result = await WebBrowser.openAuthSessionAsync(`${BACKEND_URL}/api/auth/google/init?mobile=true`, 'ecotrack://auth');
         if (result.type === 'success') {
-          const params  = new URLSearchParams(result.url.split('?')[1] || '');
-          const token   = params.get('googleToken');
-          const userStr = params.get('googleUser');
-          const err     = params.get('googleError');
-          if (err) {
-            setError(decodeURIComponent(err));
-          } else if (token && userStr) {
-            await loginWithGoogleToken(token, JSON.parse(decodeURIComponent(userStr)));
-          } else if (params.get('googleOtpRequired') === 'true') {
-            navigation.navigate('GoogleOtp', {
-              tempToken: params.get('tempToken'),
-              otpEmail:  decodeURIComponent(params.get('otpEmail') || ''),
-            });
-          }
+          const p = new URLSearchParams(result.url.split('?')[1] || '');
+          const err = p.get('googleError');
+          const tok = p.get('googleToken');
+          const usr = p.get('googleUser');
+          if (err) setError(decodeURIComponent(err));
+          else if (tok && usr) await loginWithGoogleToken(tok, JSON.parse(decodeURIComponent(usr)));
         } else if (result.type !== 'cancel') {
           setError('Google sign-in was cancelled.');
         }
         setGLoading(false);
       }
-    } catch {
-      setError('Google sign-in failed. Please try again.');
-      setGLoading(false);
-    }
+    } catch { setError('Google sign-in failed.'); setGLoading(false); }
   };
 
   const handleLogin = async () => {
     setError('');
-    if (!email.trim() || !password.trim()) {
-      setError('Please enter your email and password.');
-      return;
-    }
+    if (!email.trim() || !password.trim()) { setError('Please enter your email and password.'); return; }
     setLoading(true);
-    try {
-      await login(email.trim(), password);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Invalid email or password.');
-    } finally {
-      setLoading(false);
-    }
+    try { await login(email.trim(), password); }
+    catch (err) { setError(err.response?.data?.error || 'Invalid email or password.'); }
+    finally { setLoading(false); }
   };
 
-  // Pulse animation on Sign In button press
   const btnScale = useRef(new Animated.Value(1)).current;
-  const onPressIn  = () => Animated.spring(btnScale, { toValue: 0.96, useNativeDriver: true }).start();
-  const onPressOut = () => Animated.spring(btnScale, { toValue: 1,    useNativeDriver: true }).start();
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <View style={s.root}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-        {/* ── Hero ───────────────────────────────────────────────────────── */}
-        <Animated.View style={[styles.hero, { opacity: heroOpacity, transform: [{ translateY: heroTranslate }] }]}>
-          {/* Dark green top strip */}
-          <View style={styles.heroDark} />
-          {/* Medium green body */}
-          <View style={styles.heroBody}>
-            <Animated.Text style={[styles.heroIcon, { transform: [{ rotate: logoSpin }] }]}>🌿</Animated.Text>
-            <Text style={styles.heroTitle}>Eco AI</Text>
-            <Text style={styles.heroSub}>Carbon Footprint Tracker</Text>
-          </View>
-          {/* Light green wave-like bottom */}
-          <View style={styles.heroLight} />
-        </Animated.View>
+      {/* ── Full-screen background ────────────────────────────────────── */}
+      <ImageBackground source={{ uri: BG_IMG }} style={StyleSheet.absoluteFill} resizeMode="cover" />
 
-        {/* ── Card ───────────────────────────────────────────────────────── */}
-        <Animated.View style={[styles.card, { opacity: cardOpacity, transform: [{ translateY: cardTranslate }] }]}>
-          <Text style={styles.cardTitle}>Welcome Back</Text>
-          <Text style={styles.cardSubtitle}>Sign in to track your carbon footprint</Text>
+      {/* ── Layered gradients for atmosphere ─────────────────────────── */}
+      <LinearGradient
+        colors={['rgba(3,10,3,0.15)', 'rgba(5,14,5,0.30)', 'rgba(3,8,3,0.92)']}
+        locations={[0, 0.4, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      {/* Top vignette */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.55)', 'transparent']}
+        style={[StyleSheet.absoluteFill, { height: H * 0.35 }]}
+      />
 
-          {!!error && (
-            <View style={styles.alertDanger}>
-              <Text style={styles.alertText}>⚠️  {error}</Text>
-            </View>
-          )}
+      <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
 
-          {/* ── Email ── */}
-          <Text style={styles.label}>Email Address</Text>
-          <TextInput
-            mode="outlined"
-            placeholder="you@example.com"
-            value={email}
-            onChangeText={(v) => { setEmail(v); setError(''); }}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="off"
-            left={<TextInput.Icon icon="email-outline" color={Colors.primary} />}
-            style={styles.input}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.primary}
-            theme={{ roundness: Radii.md }}
-          />
+          {/* ── App name header ── */}
+          <Animated.View style={[s.appHeader, { opacity: brandFade, transform: [{ translateY: brandSlide }] }]}>
+            <Text style={s.appName}>ECO AI</Text>
+            <Text style={s.appTagline}>CARBON FOOTPRINT TRACKER</Text>
+          </Animated.View>
 
-          {/* ── Password ── */}
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            mode="outlined"
-            placeholder="Your password"
-            value={password}
-            onChangeText={(v) => { setPassword(v); setError(''); }}
-            secureTextEntry={!showPass}
-            autoComplete="off"
-            left={<TextInput.Icon icon="lock-outline" color={Colors.primary} />}
-            right={
-              <TextInput.Icon
-                icon={showPass ? 'eye-off' : 'eye'}
-                color={Colors.textMuted}
-                onPress={() => setShowPass(!showPass)}
+          {/* ════════════════════════════════════════════════════════════
+              SIGN-IN CARD — frosted glass
+          ════════════════════════════════════════════════════════════ */}
+          <Animated.View style={[s.card, { opacity: cardFade, transform: [{ translateY: cardSlide }] }]}>
+
+            {/* Blur layer */}
+            {Platform.OS !== 'web' ? (
+              <BlurView intensity={32} tint="dark" style={StyleSheet.absoluteFill} />
+            ) : (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(8,20,10,0.82)' }]} />
+            )}
+
+            {/* Olive top accent line */}
+            <LinearGradient
+              colors={['#B2D054', '#8FA832']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={s.accentBar}
+            />
+
+            <View style={s.cardBody}>
+              {/* Heading */}
+              <Text style={s.cardTitle}>Welcome Back 👋</Text>
+              <Text style={s.cardSub}>Sign in to continue your eco journey</Text>
+
+              {/* Error */}
+              {!!error && (
+                <View style={s.errBox}>
+                  <Text style={s.errTxt}>⚠️  {error}</Text>
+                </View>
+              )}
+
+              {/* Email */}
+              <Text style={s.lbl}>Email Address</Text>
+              <TextInput
+                mode="outlined"
+                placeholder="you@example.com"
+                placeholderTextColor="rgba(239,244,238,0.35)"
+                value={email}
+                onChangeText={v => { setEmail(v); setError(''); }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="off"
+                left={<TextInput.Icon icon="email-outline" color="#B2D054" />}
+                style={s.input}
+                outlineColor="rgba(178,208,84,0.28)"
+                activeOutlineColor="#B2D054"
+                textColor="#EFF4EE"
+                theme={{ roundness: 12, colors: { background: 'rgba(255,255,255,0.06)' } }}
               />
-            }
-            style={styles.input}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.primary}
-            theme={{ roundness: Radii.md }}
-          />
 
-          {/* ── Forgot Password ── */}
-          <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')} style={styles.forgotRow}>
-            <Text style={styles.forgotText}>Forgot Password?</Text>
-          </TouchableOpacity>
+              {/* Password */}
+              <Text style={s.lbl}>Password</Text>
+              <TextInput
+                mode="outlined"
+                placeholder="Your password"
+                placeholderTextColor="rgba(239,244,238,0.35)"
+                value={password}
+                onChangeText={v => { setPassword(v); setError(''); }}
+                secureTextEntry={!showPass}
+                autoComplete="off"
+                left={<TextInput.Icon icon="lock-outline" color="#B2D054" />}
+                right={
+                  <TextInput.Icon
+                    icon={showPass ? 'eye-off' : 'eye'}
+                    color="rgba(239,244,238,0.45)"
+                    onPress={() => setShowPass(p => !p)}
+                  />
+                }
+                style={s.input}
+                outlineColor="rgba(178,208,84,0.28)"
+                activeOutlineColor="#B2D054"
+                textColor="#EFF4EE"
+                theme={{ roundness: 12, colors: { background: 'rgba(255,255,255,0.06)' } }}
+              />
 
-          {/* ── Sign In button ── */}
-          <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-            <Button
-              mode="contained"
-              onPress={handleLogin}
-              onPressIn={onPressIn}
-              onPressOut={onPressOut}
-              loading={loading}
-              disabled={loading}
-              style={styles.btnPrimary}
-              contentStyle={styles.btnContent}
-              labelStyle={styles.btnLabel}
-              buttonColor={Colors.primary}
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
-            </Button>
+              {/* Forgot */}
+              <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')} style={s.forgotRow}>
+                <Text style={s.forgotTxt}>Forgot Password?</Text>
+              </TouchableOpacity>
+
+              {/* Sign In */}
+              <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+                <TouchableOpacity
+                  onPress={handleLogin}
+                  onPressIn={() => Animated.spring(btnScale, { toValue: 0.96, useNativeDriver: true }).start()}
+                  onPressOut={() => Animated.spring(btnScale, { toValue: 1, useNativeDriver: true }).start()}
+                  disabled={loading}
+                  activeOpacity={0.88}
+                  style={s.signInBtn}
+                >
+                  <LinearGradient colors={['#B2D054', '#8FA832']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.signInGrad}>
+                    <Text style={s.signInTxt}>{loading ? 'Signing in...' : 'Sign In'}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
+
+              {/* Register */}
+              <TouchableOpacity onPress={() => navigation.navigate('Register')} style={s.registerRow}>
+                <Text style={s.registerTxt}>Don't have an account? </Text>
+                <Text style={s.registerLink}>Create Account</Text>
+              </TouchableOpacity>
+
+              {/* Divider */}
+              <View style={s.divRow}>
+                <View style={s.divLine} />
+                <Text style={s.divTxt}>OR CONTINUE WITH</Text>
+                <View style={s.divLine} />
+              </View>
+
+              {/* Google */}
+              <TouchableOpacity
+                style={[s.googleBtn, gLoading && { opacity: 0.55 }]}
+                onPress={handleGoogleSignIn}
+                disabled={gLoading}
+                activeOpacity={0.8}
+              >
+                <View style={s.googleIconCircle}><GoogleIcon size={19} /></View>
+                <Text style={s.googleTxt}>{gLoading ? 'Connecting...' : 'Continue with Google'}</Text>
+              </TouchableOpacity>
+            </View>
           </Animated.View>
 
-          {/* ── Register link ── */}
-          <TouchableOpacity onPress={() => navigation.navigate('Register')} style={styles.linkRow}>
-            <Text style={styles.linkText}>
-              Don't have an account?{'  '}
-              <Text style={styles.link}>Create Account</Text>
-            </Text>
-          </TouchableOpacity>
-
-          {/* ── Divider ── */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
-            <View style={styles.dividerLine} />
+          {/* ── Bottom tagline ── */}
+          <View style={s.footer}>
+            <Text style={s.footerTxt}>Reducing Carbon · One Step at a Time</Text>
           </View>
 
-          {/* ── Google Button (below) ── */}
-          <Animated.View style={{ transform: [{ scale: googleScale }] }}>
-            <TouchableOpacity
-              style={[styles.googleBtn, gLoading && styles.btnDisabled]}
-              onPress={handleGoogleSignIn}
-              disabled={gLoading}
-              activeOpacity={0.82}
-            >
-              <View style={styles.googleIconWrap}>
-                <GoogleIcon size={20} />
-              </View>
-              <Text style={styles.googleText}>
-                {gLoading ? 'Signing in with Google...' : 'Continue with Google'}
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </Animated.View>
-
-        {/* ── Eco tip strip ── */}
-        <View style={styles.ecoStrip}>
-          <Text style={styles.ecoStripText}>🌍  Every action counts — track yours today</Text>
-        </View>
-
-        <Text style={styles.footer}>Eco AI • Reducing Carbon, One Step at a Time</Text>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  flex:   { flex: 1, backgroundColor: '#E8F5E9' },
-  scroll: { flexGrow: 1 },
+const s = StyleSheet.create({
+  root:  { flex: 1, backgroundColor: '#050E05' },
+  flex:  { flex: 1 },
+  scroll:{ flexGrow: 1, paddingBottom: 40, justifyContent: 'center' },
 
-  // ── Hero ────────────────────────────────────────────────────────────────────
-  hero: { overflow: 'hidden' },
-
-  heroDark: {
-    backgroundColor: '#1B5E20',   // darkest green
-    height: 10,
-  },
-  heroBody: {
-    backgroundColor: '#2E7D32',   // deep green
+  // ── Brand / hero ────────────────────────────────────────────────────────────
+  brand: {
     alignItems: 'center',
-    paddingTop: 36,
-    paddingBottom: 36,
+    paddingTop: Platform.OS === 'ios' ? 72 : 52,
+    paddingBottom: 28,
   },
-  heroLight: {
-    backgroundColor: '#388E3C',   // medium-dark green transition
-    height: 28,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+  logoGlow: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 52 : 32,
+    width: 160, height: 160, borderRadius: 80,
+    backgroundColor: '#B2D054',
+    opacity: 0.18,
+  },
+  logoImg: {
+    width: 96, height: 96,
+    borderRadius: 24,
+    shadowColor: '#B2D054', shadowOpacity: 0.55, shadowRadius: 18, elevation: 12,
+  },
+  brandTitle: {
+    fontSize: 36, fontWeight: '900', color: '#FFFFFF',
+    marginTop: 14, letterSpacing: 0.5,
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 10,
+  },
+  brandSub: {
+    fontSize: 14, color: 'rgba(255,255,255,0.65)',
+    marginTop: 5, fontWeight: '500', letterSpacing: 0.5,
+  },
+  ipccBadge: {
+    marginTop: 14,
+    backgroundColor: 'rgba(178,208,84,0.16)',
+    borderRadius: 20, paddingHorizontal: 16, paddingVertical: 6,
+    borderWidth: 1, borderColor: 'rgba(178,208,84,0.35)',
+  },
+  ipccTxt: { color: '#B2D054', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
+
+  // ── Glass card ──────────────────────────────────────────────────────────────
+  appHeader: {
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 70 : 52,
+    paddingBottom: 20,
+  },
+  appName: {
+    fontSize: 42, fontWeight: '900', color: '#FFFFFF',
+    letterSpacing: 4,
+    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 12,
+  },
+  appTagline: {
+    fontSize: 12, fontWeight: '800', color: '#B2D054',
+    letterSpacing: 3.5, marginTop: 6,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
 
-  heroIcon:      { fontSize: 60, marginBottom: 10 },
-  heroTitle:     { fontSize: 32, fontWeight: '900', color: '#FFFFFF', letterSpacing: 0.5 },
-  heroSub:       { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4 },
-  heroBadge:     { marginTop: 12, backgroundColor: '#66BB6A', borderRadius: 50, paddingHorizontal: 14, paddingVertical: 5 },
-  heroBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
-
-  // ── Card ────────────────────────────────────────────────────────────────────
   card: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: Spacing.lg,
-    marginTop: -16,
-    borderRadius: Radii.xl,
-    padding: Spacing.lg,
-    ...Shadow.lg,
-    borderTopWidth: 4,
-    borderTopColor: '#66BB6A',   // accent green top border
+    marginHorizontal: 16,
+    marginTop: 0,
+    borderRadius: 26,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(178,208,84,0.20)',
+    shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 30, elevation: 20,
   },
+  accentBar: { height: 3 },
+  cardBody:  { padding: 22 },
+  cardTitle: { fontSize: 23, fontWeight: '900', color: '#EFF4EE', marginBottom: 3 },
+  cardSub:   { fontSize: 13, color: 'rgba(239,244,238,0.50)', marginBottom: 16 },
 
-  cardTitle:    { fontSize: 22, fontWeight: '800', color: '#1B2A1B', marginBottom: 2 },
-  cardSubtitle: { fontSize: 13, color: '#5D7B5D', marginBottom: Spacing.md },
-
-  alertDanger: {
-    backgroundColor: '#FFEBEE', borderLeftWidth: 4,
-    borderLeftColor: '#E53935', borderRadius: Radii.sm,
-    padding: 12, marginBottom: Spacing.md,
+  errBox: {
+    backgroundColor: 'rgba(239,68,68,0.14)', borderRadius: 10,
+    borderLeftWidth: 3, borderLeftColor: '#F87171',
+    padding: 12, marginBottom: 12,
   },
-  alertText: { color: '#b71c1c', fontSize: 13, fontWeight: '600' },
+  errTxt: { color: '#FCA5A5', fontSize: 13, fontWeight: '600' },
 
-  label: { fontSize: 13, fontWeight: '700', color: '#1B2A1B', marginTop: Spacing.sm, marginBottom: 4 },
-  input: { backgroundColor: '#F9FBF9', marginBottom: 2 },
+  lbl:   { fontSize: 11, fontWeight: '700', color: 'rgba(239,244,238,0.55)', marginTop: 12, marginBottom: 5, letterSpacing: 0.6, textTransform: 'uppercase' },
+  input: { marginBottom: 2 },
 
-  forgotRow: { alignSelf: 'flex-end', marginTop: 6, marginBottom: 4 },
-  forgotText: { fontSize: 13, color: '#2E7D32', fontWeight: '700' },
+  forgotRow: { alignSelf: 'flex-end', marginTop: 9, marginBottom: 5 },
+  forgotTxt: { fontSize: 13, color: '#B2D054', fontWeight: '700' },
 
-  btnPrimary: { marginTop: Spacing.sm, borderRadius: Radii.md },
-  btnContent: { height: 52 },
-  btnLabel:   { fontSize: 16, fontWeight: '800', letterSpacing: 0.4, color: '#FFFFFF' },
+  // Sign in button — gradient
+  signInBtn:  { marginTop: 14, borderRadius: 14, overflow: 'hidden' },
+  signInGrad: { paddingVertical: 15, alignItems: 'center' },
+  signInTxt:  { fontSize: 16, fontWeight: '900', color: '#1A2318', letterSpacing: 0.4 },
 
-  linkRow:  { alignItems: 'center', marginTop: Spacing.md },
-  linkText: { color: '#5D7B5D', fontSize: 14 },
-  link:     { color: '#2E7D32', fontWeight: '700' },
+  registerRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 16 },
+  registerTxt: { color: 'rgba(239,244,238,0.50)', fontSize: 14 },
+  registerLink:{ color: '#B2D054', fontWeight: '800', fontSize: 14 },
 
-  dividerRow:  { flexDirection: 'row', alignItems: 'center', marginVertical: Spacing.md },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#C8E6C9' },
-  dividerText: { marginHorizontal: Spacing.sm, color: '#5D7B5D', fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
+  divRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 18 },
+  divLine:{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.10)' },
+  divTxt: { marginHorizontal: 10, color: 'rgba(239,244,238,0.30)', fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
 
-  // ── Google button ───────────────────────────────────────────────────────────
+  // Google button
   googleBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#F1F8E9',
-    borderRadius: Radii.md,
-    paddingVertical: 13,
-    borderWidth: 1.5,
-    borderColor: '#A5D6A7',
-    gap: 12,
-    ...Shadow.sm,
+    backgroundColor: 'rgba(255,255,255,0.09)',
+    borderRadius: 14, paddingVertical: 14,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', gap: 12,
   },
-  btnDisabled: { opacity: 0.6 },
-
-  googleIconWrap: {
-    width: 28, height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+  googleIconCircle: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center',
-    ...Shadow.sm,
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, elevation: 3,
   },
-  googleText:     { fontSize: 15, fontWeight: '700', color: '#1B2A1B' },
+  googleTxt: { fontSize: 15, fontWeight: '700', color: 'rgba(239,244,238,0.88)' },
 
-  // ── Eco strip ───────────────────────────────────────────────────────────────
-  ecoStrip: {
-    backgroundColor: '#C8E6C9',
-    marginHorizontal: Spacing.lg,
-    marginTop: Spacing.md,
-    borderRadius: Radii.md,
-    padding: 10,
-    alignItems: 'center',
-  },
-  ecoStripText: { color: '#1B5E20', fontSize: 12, fontWeight: '600' },
-
-  footer: {
-    textAlign: 'center', color: '#81C784', fontSize: 11,
-    marginBottom: Spacing.xl, marginTop: Spacing.sm, fontWeight: '500',
-  },
+  // Footer
+  footer:    { alignItems: 'center', marginTop: 24 },
+  footerTxt: { color: 'rgba(255,255,255,0.28)', fontSize: 11, fontWeight: '500' },
 });

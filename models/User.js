@@ -40,6 +40,25 @@ const UserSchema = new mongoose.Schema({
         type: String,
         default: null
     },
+    coverPhoto: {
+        type: String,
+        default: null
+    },
+    age: {
+        type: Number,
+        min: 1, max: 120,
+        default: null
+    },
+    gender: {
+        type: String,
+        enum: ['male', 'female', 'non-binary', 'prefer_not_to_say', null],
+        default: null
+    },
+    bio: {
+        type: String,
+        maxlength: 200,
+        default: null
+    },
     provider: {
         type: String,
         enum: ['local', 'google'],
@@ -51,7 +70,8 @@ const UserSchema = new mongoose.Schema({
 
     // Notifications & alerts
     fcmToken:       { type: String, default: null },
-    dailyThreshold: { type: Number, default: 10 },  // kg CO₂/day threshold for alerts
+    dailyThreshold:      { type: Number,  default: 10    },  // kg CO₂/day threshold
+    onboardingComplete:  { type: Boolean, default: false  },  // has user set their goal?
 
     createdAt: {
         type: Date,

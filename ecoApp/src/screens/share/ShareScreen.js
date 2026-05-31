@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Share,
 } from 'react-native';
+import { showAlert } from '../../utils/crossAlert';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getActivitySummary } from '../../api/api';
+import BackButton from '../../components/BackButton';
+import ScreenTransition from '../../components/ScreenTransition';
 import { useAuth } from '../../context/AuthContext';
 
 const LEVEL_NAMES = ['', 'Eco Starter', 'Green Explorer', 'Eco Warrior', 'Carbon Crusher', 'Eco Champion', 'Planet Guardian'];
@@ -21,7 +24,7 @@ export default function ShareScreen() {
         setStats(res.data.stats);
         setSummary(res.data);
       } catch {
-        Alert.alert('Error', 'Failed to load your eco data');
+        showAlert('Error', 'Failed to load your eco data');
       } finally {
         setLoading(false);
       }
@@ -29,11 +32,11 @@ export default function ShareScreen() {
   }, []);
 
   const getScoreColor = (score) => {
-    if (score >= 80) return '#00C853';
-    if (score >= 60) return '#64DD17';
-    if (score >= 40) return '#FFD600';
-    if (score >= 20) return '#FF6D00';
-    return '#DD2C00';
+    if (score >= 80) return '#B2D054';
+    if (score >= 60) return '#8FA832';
+    if (score >= 40) return '#F59E0B';
+    if (score >= 20) return '#FB923C';
+    return '#EF4444';
   };
 
   const handleShare = async () => {
@@ -64,7 +67,7 @@ Tracking my carbon footprint with EcoTrack AI 🌱
     try {
       await Share.share({ message: shareText, title: 'My EcoTrack AI Score' });
     } catch (e) {
-      Alert.alert('Error', 'Could not open share dialog');
+      showAlert('Error', 'Could not open share dialog');
     }
   };
 
@@ -86,9 +89,12 @@ Tracking my carbon footprint with EcoTrack AI 🌱
   const levelName  = LEVEL_NAMES[Math.min(level, 6)] || 'Eco Champion';
 
   return (
+    <ScreenTransition>
+    <View style={{ flex: 1 }}>
+    <BackButton />
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Header */}
-      <LinearGradient colors={['#1B5E20', '#2E7D32', '#43A047']} style={styles.header}>
+      <LinearGradient colors={['#0A1A0F', '#0C1B12', '#0E2016']} style={styles.header}>
         <Text style={styles.headerTitle}>📤 Share Eco Score</Text>
         <Text style={styles.headerSub}>Show the world your green impact</Text>
       </LinearGradient>
@@ -177,6 +183,8 @@ Tracking my carbon footprint with EcoTrack AI 🌱
 
       <View style={{ height: 40 }} />
     </ScrollView>
+    </View>
+    </ScreenTransition>
   );
 }
 
@@ -193,7 +201,7 @@ const styles = StyleSheet.create({
   scoreCard: { margin: 16, borderRadius: 24, overflow: 'hidden', elevation: 8, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12 },
   cardGradient: { padding: 24 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  cardAppName:{ fontSize: 16, fontWeight: '800', color: '#66BB6A' },
+  cardAppName:{ fontSize: 16, fontWeight: '800', color: '#B2D054' },
   cardUserName:{ fontSize: 14, color: 'rgba(255,255,255,0.7)' },
 
   scoreRingOuter: { alignItems: 'center', marginBottom: 24 },

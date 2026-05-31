@@ -4,13 +4,13 @@ import { MD3LightTheme } from 'react-native-paper';
 // Eco-green color palette
 
 export const Colors = {
-  // Brand
-  primary:      '#2E7D32',   // deep eco green
-  primaryDark:  '#1B5E20',
-  primaryLight: '#C8E6C9',
-  secondary:    '#00897B',   // teal (water / environment)
-  secondaryLight:'#B2DFDB',
-  accent:       '#66BB6A',   // medium green
+  // Brand — Carbon Eco AI professional palette
+  primary:      '#B2D054',   // olive green (WCAG AA)
+  primaryDark:  '#8FA832',   // deeper olive
+  primaryLight: '#EEF3D5',   // tint
+  secondary:    '#39A7A7',   // muted teal (light mode)
+  secondaryLight:'#E0F4F4',
+  accent:       '#5AC8FA',   // sky teal (dark mode)
 
   // Semantic
   success:      '#43A047',
@@ -24,14 +24,14 @@ export const Colors = {
 
   // Neutral
   white:        '#FFFFFF',
-  background:   '#F1F8E9',   // very light green tint
+  background:   '#F5F7EF',
   surface:      '#FFFFFF',
-  border:       '#C8E6C9',
-  muted:        '#6c757d',
-  text:         '#1B2A1B',   // dark green-black
-  textMuted:    '#5D7B5D',
-  dark:         '#1B2A1B',
-  light:        '#F1F8E9',
+  border:       'rgba(178,208,84,0.30)',
+  muted:        '#6B7A6D',
+  text:         '#1A2318',
+  textMuted:    '#6B7A6D',
+  dark:         '#1A2318',
+  light:        '#F5F7EF',
 };
 
 export const Theme = {

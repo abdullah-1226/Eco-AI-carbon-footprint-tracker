@@ -3,6 +3,8 @@ import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 're
 import { Text, TextInput, Button, HelperText } from 'react-native-paper';
 import { resetPassword } from '../../api/api';
 import { useAuth } from '../../context/AuthContext';
+import BackButton from '../../components/BackButton';
+import ScreenTransition from '../../components/ScreenTransition';
 import storage from '../../utils/storage';
 import { Colors, Shadow, Radii, Spacing } from '../../theme';
 
@@ -16,7 +18,7 @@ const getPasswordStrength = (pwd) => {
   };
   const score = Object.values(checks).filter(Boolean).length;
   const label = score <= 1 ? 'Very Weak' : score === 2 ? 'Weak' : score === 3 ? 'Fair' : score === 4 ? 'Good' : 'Strong';
-  const color = score <= 1 ? '#E53935' : score === 2 ? '#FB8C00' : score === 3 ? '#FDD835' : score === 4 ? '#66BB6A' : '#2E7D32';
+  const color = score <= 1 ? '#E53935' : score === 2 ? '#FB8C00' : score === 3 ? '#F59E0B' : score === 4 ? '#B2D054' : '#8FA832';
   return { score, label, color, checks };
 };
 
@@ -87,6 +89,9 @@ export default function ResetPasswordScreen({ navigation, route }) {
   }
 
   return (
+    <ScreenTransition>
+    <View style={styles.flex}>
+    <BackButton dark />
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
@@ -229,6 +234,8 @@ export default function ResetPasswordScreen({ navigation, route }) {
         <Text style={styles.footer}>🌿 EcoTrack AI — FYP Carbon Footprint Tracker</Text>
       </ScrollView>
     </KeyboardAvoidingView>
+    </View>
+    </ScreenTransition>
   );
 }
 

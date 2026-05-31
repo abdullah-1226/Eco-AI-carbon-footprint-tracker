@@ -6,28 +6,39 @@ const User          = require('../models/User');
 // ─── Emission Factors (kg CO₂ per unit) ──────────────────────────────────────
 const EF = {
     transport: {
-        car_petrol:           { factor: 0.21,   unit: 'km',   label: 'Car (Petrol)' },
-        car_diesel:           { factor: 0.17,   unit: 'km',   label: 'Car (Diesel)' },
-        car_electric:         { factor: 0.05,   unit: 'km',   label: 'Car (Electric)' },
-        motorcycle:           { factor: 0.114,  unit: 'km',   label: 'Motorcycle' },
-        bus:                  { factor: 0.089,  unit: 'km',   label: 'Bus' },
-        train:                { factor: 0.041,  unit: 'km',   label: 'Train' },
-        flight_domestic:      { factor: 0.255,  unit: 'km',   label: 'Flight (Domestic)' },
-        flight_international: { factor: 0.195,  unit: 'km',   label: 'Flight (International)' },
-        bicycle:              { factor: 0,      unit: 'km',   label: 'Bicycle' },
-        walking:              { factor: 0,      unit: 'km',   label: 'Walking' },
+        car_petrol:           { factor: 0.21,  unit: 'km',   label: 'Car (Petrol)' },
+        car_diesel:           { factor: 0.17,  unit: 'km',   label: 'Car (Diesel)' },
+        car_electric:         { factor: 0.05,  unit: 'km',   label: 'Car (Electric)' },
+        car_hybrid:           { factor: 0.11,  unit: 'km',   label: 'Car (Hybrid)' },
+        car_suv_petrol:       { factor: 0.28,  unit: 'km',   label: 'Car SUV (Petrol)' },
+        car_suv_diesel:       { factor: 0.22,  unit: 'km',   label: 'Car SUV (Diesel)' },
+        car_van:              { factor: 0.20,  unit: 'km',   label: 'Van / Minibus' },
+        motorcycle:           { factor: 0.114, unit: 'km',   label: 'Motorcycle' },
+        bus:                  { factor: 0.089, unit: 'km',   label: 'Bus' },
+        train:                { factor: 0.041, unit: 'km',   label: 'Train' },
+        flight_domestic:      { factor: 0.255, unit: 'km',   label: 'Flight (Domestic)' },
+        flight_international: { factor: 0.195, unit: 'km',   label: 'Flight (International)' },
+        bicycle:              { factor: 0,     unit: 'km',   label: 'Bicycle' },
+        walking:              { factor: 0,     unit: 'km',   label: 'Walking' },
     },
     food: {
-        beef_meal:    { factor: 6.61, unit: 'meal', label: 'Beef Meal' },
-        pork_meal:    { factor: 2.45, unit: 'meal', label: 'Pork Meal' },
-        chicken_meal: { factor: 1.24, unit: 'meal', label: 'Chicken Meal' },
-        fish_meal:    { factor: 1.51, unit: 'meal', label: 'Fish Meal' },
-        vegetarian:   { factor: 0.94, unit: 'meal', label: 'Vegetarian Meal' },
-        vegan:        { factor: 0.70, unit: 'meal', label: 'Vegan Meal' },
+        beef_meal:       { factor: 6.61, unit: 'meal', label: 'Beef Meal' },
+        lamb_meal:       { factor: 5.84, unit: 'meal', label: 'Lamb/Mutton Meal' },
+        pork_meal:       { factor: 2.45, unit: 'meal', label: 'Pork Meal' },
+        chicken_meal:    { factor: 1.24, unit: 'meal', label: 'Chicken Meal' },
+        fish_meal:       { factor: 1.51, unit: 'meal', label: 'Fish Meal' },
+        dairy_meal:      { factor: 1.35, unit: 'meal', label: 'Dairy (Milk/Cheese)' },
+        vegetables_meal: { factor: 0.35, unit: 'meal', label: 'Fresh Vegetables' },
+        processed_food:  { factor: 2.85, unit: 'meal', label: 'Processed Food' },
+        vegetarian:      { factor: 0.94, unit: 'meal', label: 'Vegetarian Meal' },
+        vegan:           { factor: 0.70, unit: 'meal', label: 'Vegan Meal' },
     },
     energy: {
-        electricity: { factor: 0.233, unit: 'kWh', label: 'Electricity' },
-        natural_gas: { factor: 0.202, unit: 'kWh', label: 'Natural Gas' },
+        electricity:  { factor: 0.233, unit: 'kWh', label: 'Electricity (Grid)' },
+        natural_gas:  { factor: 0.202, unit: 'kWh', label: 'Natural Gas' },
+        solar_energy: { factor: 0.02,  unit: 'kWh', label: 'Solar Energy' },
+        lpg_gas:      { factor: 0.215, unit: 'kWh', label: 'LPG / Cooking Gas' },
+        coal_heating: { factor: 0.341, unit: 'kWh', label: 'Coal Heating' },
     },
     shopping: {
         clothing:          { factor: 25,  unit: 'item', label: 'Clothing' },
@@ -35,6 +46,9 @@ const EF = {
         electronics_large: { factor: 300, unit: 'item', label: 'Electronics (Large)' },
         furniture:         { factor: 120, unit: 'item', label: 'Furniture' },
         grocery_bag:       { factor: 5,   unit: 'bag',  label: 'Grocery Bag' },
+    },
+    custom: {
+        custom_activity: { factor: 1.0, unit: 'kg CO₂', label: 'Custom Activity' },
     },
 };
 
@@ -122,22 +136,35 @@ const checkBadges = (stats, activity, allActivities) => {
 // ─── @route  POST /api/activities ────────────────────────────────────────────
 exports.logActivity = async (req, res, next) => {
     try {
-        const { category, subType, value, note, date } = req.body;
+        const { category, subType, value, note, date, customLabel, customEF } = req.body;
 
         if (!category || !subType || value == null) {
             return res.status(400).json({ success: false, error: 'category, subType, and value are required' });
         }
 
-        const ef = EF[category]?.[subType];
-        if (!ef) return res.status(400).json({ success: false, error: 'Invalid category or subType' });
+        let co2e, activityLabel, activityUnit;
 
-        const co2e = calcCo2(category, subType, value);
+        if (category === 'custom') {
+            co2e          = parseFloat(value) || 0;
+            activityLabel = customLabel || note || 'Custom Activity';
+            activityUnit  = 'kg CO₂';
+        } else {
+            const ef = EF[category]?.[subType];
+            if (!ef) return res.status(400).json({ success: false, error: 'Invalid category or subType' });
+            // customEF sent from frontend when a scenario (carpool, cooking method, etc.) adjusts the factor
+            const factor = (customEF != null && !isNaN(parseFloat(customEF)))
+                ? parseFloat(customEF)
+                : ef.factor;
+            co2e          = parseFloat((factor * parseFloat(value)).toFixed(3));
+            activityLabel = ef.label;
+            activityUnit  = ef.unit;
+        }
 
         const activity = await Activity.create({
             user: req.user.id,
             category, subType,
-            label: ef.label,
-            value, unit: ef.unit,
+            label: activityLabel,
+            value, unit: activityUnit,
             co2e,
             note: note || '',
             date: date ? new Date(date) : new Date(),
@@ -160,7 +187,7 @@ exports.logActivity = async (req, res, next) => {
         updateStreak(stats);
 
         // Recalc monthly emissions
-        const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+        const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const monthlyAgg = await Activity.aggregate([
             { $match: { user: activity.user, date: { $gte: monthStart } } },
             { $group: { _id: null, total: { $sum: '$co2e' } } },
@@ -179,7 +206,7 @@ exports.logActivity = async (req, res, next) => {
             const userDoc = await User.findById(req.user.id).select('dailyThreshold');
             const threshold = userDoc?.dailyThreshold ?? 10;
 
-            const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+            const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
             const todayAgg   = await Activity.aggregate([
                 { $match: { user: activity.user, date: { $gte: todayStart } } },
                 { $group: { _id: null, total: { $sum: '$co2e' } } },
@@ -244,15 +271,17 @@ exports.getActivities = async (req, res, next) => {
 // ─── @route  GET /api/activities/summary ─────────────────────────────────────
 exports.getSummary = async (req, res, next) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user._id; // must be ObjectId — aggregation pipeline doesn't auto-cast strings
         const now    = new Date();
 
-        // Date ranges
-        const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
-        const weekStart  = new Date(now); weekStart.setDate(now.getDate() - 6); weekStart.setHours(0, 0, 0, 0);
-        const monthStart = new Date(now); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+        // Date ranges — all UTC to match MongoDB's $dateToString default (UTC)
+        const todayStart     = new Date(now); todayStart.setUTCHours(0, 0, 0, 0);
+        const yesterdayStart = new Date(todayStart); yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
+        const weekStart      = new Date(todayStart); weekStart.setUTCDate(weekStart.getUTCDate() - 6);
+        const monthStart     = new Date(todayStart); monthStart.setUTCDate(1);
+        const thirtyDaysAgo  = new Date(todayStart); thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29);
 
-        const [todayAgg, weekAgg, monthAgg, categoryAgg, stats] = await Promise.all([
+        const [todayAgg, weekAgg, monthAgg, categoryAgg, yesterdayAgg, stats, daily30Agg, weeklyAgg] = await Promise.all([
             Activity.aggregate([
                 { $match: { user: userId, date: { $gte: todayStart } } },
                 { $group: { _id: null, total: { $sum: '$co2e' }, count: { $sum: 1 } } },
@@ -270,24 +299,74 @@ exports.getSummary = async (req, res, next) => {
                 { $match: { user: userId, date: { $gte: monthStart } } },
                 { $group: { _id: '$category', total: { $sum: '$co2e' } } },
             ]),
+            Activity.aggregate([
+                { $match: { user: userId, date: { $gte: yesterdayStart, $lt: todayStart } } },
+                { $group: { _id: '$category', total: { $sum: '$co2e' } } },
+            ]),
             UserStats.findOne({ user: userId }),
+            // last 30 days — one entry per day
+            Activity.aggregate([
+                { $match: { user: userId, date: { $gte: thirtyDaysAgo } } },
+                { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }, total: { $sum: '$co2e' }, count: { $sum: 1 } } },
+                { $sort: { _id: 1 } },
+            ]),
+            // last 30 days — one entry per ISO week
+            Activity.aggregate([
+                { $match: { user: userId, date: { $gte: thirtyDaysAgo } } },
+                { $group: {
+                    _id:       { year: { $isoWeekYear: '$date' }, week: { $isoWeek: '$date' } },
+                    total:     { $sum: '$co2e' },
+                    count:     { $sum: 1 },
+                    weekStart: { $min: '$date' },
+                }},
+                { $sort: { '_id.year': 1, '_id.week': 1 } },
+            ]),
         ]);
 
-        // Build 7-day chart data (fill gaps with 0)
+        // Build 7-day chart data (fill gaps with 0) — keys in UTC to match weekAgg grouping
         const last7 = [];
         for (let i = 6; i >= 0; i--) {
-            const d = new Date(now); d.setDate(now.getDate() - i);
+            const d = new Date(todayStart); d.setUTCDate(d.getUTCDate() - i);
             const key = d.toISOString().slice(0, 10);
             const found = weekAgg.find(x => x._id === key);
             last7.push({ date: key, label: d.toLocaleDateString('en', { weekday: 'short' }), co2e: found?.total ?? 0 });
         }
 
+        // Build 30-day daily array (fill gaps with 0)
+        const daily30 = [];
+        for (let i = 29; i >= 0; i--) {
+            const d = new Date(todayStart); d.setUTCDate(d.getUTCDate() - i);
+            const key   = d.toISOString().slice(0, 10);
+            const found = daily30Agg.find(x => x._id === key);
+            daily30.push({
+                date:     key,
+                label:    d.toLocaleDateString('en', { month: 'short', day: 'numeric' }),
+                dayLabel: d.toLocaleDateString('en', { weekday: 'short' }),
+                co2e:     found?.total ?? 0,
+                count:    found?.count ?? 0,
+            });
+        }
+
+        // Build per-week array (last ~4-5 weeks)
+        const weekly4 = weeklyAgg.map(w => ({
+            label:     `Wk ${w._id.week}`,
+            weekStart: new Date(w.weekStart).toLocaleDateString('en', { month: 'short', day: 'numeric' }),
+            co2e:      parseFloat(w.total.toFixed(2)),
+            count:     w.count,
+        }));
+
+        // Yesterday per-category map
+        const yesterdayByCategory = Object.fromEntries(yesterdayAgg.map(y => [y._id, y.total]));
+
         res.status(200).json({
-            success: true,
-            today:   { co2e: todayAgg[0]?.total ?? 0, count: todayAgg[0]?.count ?? 0 },
-            weekly:  last7,
-            monthly: { breakdown: monthAgg, total: monthAgg.reduce((s, c) => s + c.total, 0) },
+            success:   true,
+            today:     { co2e: todayAgg[0]?.total ?? 0, count: todayAgg[0]?.count ?? 0 },
+            weekly:    last7,
+            monthly:   { breakdown: monthAgg, total: monthAgg.reduce((s, c) => s + c.total, 0) },
+            yesterday: yesterdayByCategory,
             stats,
+            daily30,
+            weekly4,
         });
     } catch (err) {
         next(err);
@@ -325,6 +404,131 @@ exports.getEmissionFactors = async (req, res) => {
     res.status(200).json({ success: true, data: EF });
 };
 
+// ─── @route  POST /api/activities/analyze-scenario ───────────────────────────
+// Accepts a free-text scenario description and returns an AI-derived CO₂ multiplier.
+exports.analyzeScenario = async (req, res, next) => {
+    try {
+        const { description, category, subType, baseEF, unit, isFood } = req.body;
+
+        if (!description?.trim()) {
+            return res.status(400).json({ success: false, error: 'Description is required.' });
+        }
+
+        const apiKey = process.env.GROQ_API_KEY;
+        if (!apiKey || apiKey === 'your_groq_api_key_here') {
+            // Fallback: simple keyword parse
+            return res.json(simpleParse(description, baseEF, unit));
+        }
+
+        const Groq = require('groq-sdk');
+        const groq = new Groq({ apiKey });
+
+        const prompt = `You are an expert carbon footprint calculator with deep knowledge of Pakistan geography and global emission factors.
+
+User is logging a ${category} activity.
+Activity subtype: ${subType}
+Base emission factor: ${baseEF} kg CO₂ per ${unit}
+User description: "${description}"
+
+KNOWN PAKISTAN ROAD DISTANCES (km):
+Lahore-Karachi=1250, Lahore-Islamabad=380, Lahore-Peshawar=490, Lahore-Multan=350, Lahore-Faisalabad=160, Lahore-Sialkot=125, Lahore-Gujranwala=70, Lahore-Rawalpindi=370, Karachi-Islamabad=1625, Karachi-Multan=900, Karachi-Hyderabad=165, Islamabad-Peshawar=170, Islamabad-Multan=420, Multan-Faisalabad=195
+
+MULTIPLIER RULES:
+TRANSPORT:
+- Solo driver in own car = ×1.0
+- Taxi/Uber/Careem/Cab = ×0.67 (average 1.5 occupants share emissions)
+- Carpool: 2 people total=×0.5, 3=×0.333, 4=×0.25, 5=×0.2
+- AC on = ×1.15 | Highway = ×0.9 | Heavy city traffic = ×1.2
+- Bus/coach = ×0.089 per km (use this EF directly, set multiplier accordingly)
+- For round trips mentioned: add both legs together for suggestedValue
+- Combine all applicable factors by multiplying
+
+FOOD: small/light portion=×0.6, large/heavy=×1.5, organic/local=×0.7, imported=×1.2, leftover=×0.3, vegan=×0.4
+SHOPPING: second-hand/thrift=×0.1, eco/sustainable brand=×0.55, premium/luxury=×1.3, repaired=×0.15
+ENERGY: solar/renewable=×0.05, efficient/LED=×0.6, old/inefficient=×1.4, eco-mode=×0.5
+
+CRITICAL — suggestedValue meaning by category:
+- TRANSPORT: suggestedValue = total distance in KM (e.g. Lahore→Karachi round trip = 2500)
+- FOOD: suggestedValue = weight of food in KG mentioned by user (e.g. "5 kg mutton" → 5, "500g chicken" → 0.5). NEVER put CO₂ here.
+- ENERGY: suggestedValue = kWh consumed if mentioned, else null
+- SHOPPING: suggestedValue = number of items if mentioned, else null
+
+RESPONSE FORMAT — return ONLY this JSON, no extra text:
+{
+  "multiplier": <combined decimal factor, 0.05–3.0>,
+  "suggestedValue": <see above rules — the QUANTITY not the CO₂ amount>,
+  "explanation": "<one clear sentence summarising the full calculation>",
+  "breakdown": ["<factor 1 with numbers>", "<factor 2 with numbers>", "<total CO₂ estimate>"]
+}
+
+Example — TRANSPORT "Lahore to Karachi solo then back by taxi":
+{"multiplier":0.835,"suggestedValue":2500,"explanation":"Lahore→Karachi 1250km solo (×1.0) + return 1250km taxi (×0.67) = 2500km total, weighted ×0.835.","breakdown":["Outbound: 1250km solo ×1.0 = 262.5 kg","Return: 1250km taxi ×0.67 = 176kg","Total 2500km, avg ×0.835"]}
+
+Example — FOOD "i use 5 kg mutton, 2.5 kg bbq and 2.5 kg deep fried":
+{"multiplier":1.3,"suggestedValue":5,"explanation":"5 kg mutton total: half BBQ (×1.2) and half deep fried (×1.4), average ×1.3 cooking multiplier.","breakdown":["2.5 kg BBQ ×1.2","2.5 kg deep fried ×1.4","Average multiplier: ×1.3 on 5 kg total"]}`;
+
+        const completion = await groq.chat.completions.create({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+                { role: 'system', content: 'You are a carbon footprint calculator. Always respond with valid JSON only. No markdown, no explanation outside JSON.' },
+                { role: 'user', content: prompt },
+            ],
+            max_tokens: 350,
+            temperature: 0.1,
+        });
+
+        const raw  = completion.choices[0]?.message?.content ?? '';
+        const json = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+
+        const mult           = Math.min(3.0, Math.max(0.05, parseFloat(json.multiplier) || 1.0));
+        const suggestedValue = json.suggestedValue ? parseFloat(json.suggestedValue) : null;
+        res.json({
+            success:        true,
+            multiplier:     mult,
+            estimatedEF:    parseFloat((baseEF * mult).toFixed(4)),
+            suggestedValue: suggestedValue && suggestedValue > 0 ? suggestedValue : null,
+            explanation:    json.explanation || 'Calculated from your description.',
+            breakdown:      Array.isArray(json.breakdown) ? json.breakdown : [],
+        });
+    } catch (err) {
+        // If AI fails, fall back to simple keyword parsing
+        try {
+            const { description, baseEF, unit } = req.body;
+            return res.json(simpleParse(description, baseEF, unit));
+        } catch (_) { next(err); }
+    }
+};
+
+function simpleParse(description = '', baseEF = 0, unit = 'km') {
+    const text = description.toLowerCase();
+    let mult = 1.0;
+    const breakdown = [];
+
+    // Passengers
+    const paxMatch = text.match(/(\d+)\s*(people|passengers?|persons?|pax|ppl)/);
+    if (paxMatch) {
+        const n = parseInt(paxMatch[1]);
+        if (n > 1) { mult *= 1 / n; breakdown.push(`÷${n} passengers = ${(1/n).toFixed(3)}`); }
+    }
+    // AC
+    if (/\bac\b|air.?con|aircond/.test(text)) { mult *= 1.15; breakdown.push('×1.15 AC on'); }
+    // Highway
+    if (/highway|motorway|freeway|express/.test(text)) { mult *= 0.9; breakdown.push('×0.9 highway (efficient)'); }
+    // City / traffic
+    if (/city|traffic|jam|urban|stop.?go/.test(text)) { mult *= 1.2; breakdown.push('×1.2 city traffic'); }
+
+    mult = Math.min(3.0, Math.max(0.05, mult));
+    return {
+        success:     true,
+        multiplier:  parseFloat(mult.toFixed(4)),
+        estimatedEF: parseFloat((baseEF * mult).toFixed(4)),
+        explanation: breakdown.length
+            ? `Applied: ${breakdown.join(', ')}.`
+            : 'No specific factors detected — using base rate.',
+        breakdown,
+    };
+}
+
 // ── Fallback suggestions (when no Gemini key) ─────────────────────────────────
 const FALLBACK_SUGGESTIONS = [
     { icon: '🚶', title: 'Walk Short Trips', tip: 'Replace car trips under 3 km with walking or cycling to save ~0.6 kg CO₂ per trip.', category: 'transport', impact: 'high' },
@@ -340,7 +544,7 @@ exports.getAISuggestions = async (req, res, next) => {
         const apiKey = process.env.GROQ_API_KEY;
 
         // Collect user data for context
-        const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+        const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
         const [stats, categoryAgg, recent] = await Promise.all([
             UserStats.findOne({ user: req.user.id }),
             Activity.aggregate([

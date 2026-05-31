@@ -1,32 +1,117 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, ScrollView, StyleSheet, RefreshControl, Dimensions } from 'react-native';
-import { Text } from 'react-native-paper';
-import { BarChart, LineChart } from 'react-native-chart-kit';
-import { getActivitySummary, getActivities, getAISuggestions } from '../../api/api';
-import Loading from '../../components/Loading';
-import { Colors, Shadow, Radii, Spacing } from '../../theme';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+  View, Text, ScrollView, StyleSheet, TouchableOpacity,
+  RefreshControl, ActivityIndicator, Dimensions, Platform,
+  Animated, Easing,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, G } from 'react-native-svg';
+import { getActivitySummary, getAISuggestions } from '../../api/api';
+import ScreenTransition from '../../components/ScreenTransition';
+import { useAppTheme, buildC } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
+
+// ── Donut chart: draws each segment progressively clockwise ───────────────────
+function DonutChart({ data, total, size = 134, stroke = 17 }) {
+  const R      = (size - stroke - 4) / 2;
+  const CIRC   = 2 * Math.PI * R;
+  const CENTER = size / 2;
+  const [prog, setProg] = useState(0);
+  const anim   = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const id = anim.addListener(({ value }) => setProg(value));
+    Animated.timing(anim, {
+      toValue: 1, duration: 1500,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    return () => anim.removeListener(id);
+  }, []);
+
+  let cumPct = 0;
+  return (
+    <Svg width={size} height={size}>
+      {/* Background track */}
+      <Circle cx={CENTER} cy={CENTER} r={R}
+              fill="none" stroke="#E8EDE5" strokeWidth={stroke} />
+      <G rotation="-90" origin={`${CENTER},${CENTER}`}>
+        {data.map((seg, i) => {
+          const finalPct = total > 0 ? seg.value / total : 0;
+          const startPct = cumPct;
+          const endPct   = cumPct + finalPct;
+
+          // How much of this segment is visible right now
+          let visPct = 0;
+          if      (prog >= endPct)   visPct = finalPct;
+          else if (prog >  startPct) visPct = prog - startPct;
+
+          cumPct += finalPct;
+          if (visPct <= 0.001) return null;
+
+          const segLen = Math.max(CIRC * visPct - 2, 0);
+          return (
+            <Circle key={i}
+              cx={CENTER} cy={CENTER} r={R}
+              fill="none"
+              stroke={seg.color}
+              strokeWidth={stroke}
+              strokeDasharray={`${segLen} ${CIRC}`}
+              strokeDashoffset={-(startPct * CIRC)}
+              strokeLinecap="round"
+            />
+          );
+        })}
+      </G>
+    </Svg>
+  );
+}
 
 const W = Dimensions.get('window').width;
 
-const catColor = { transport: '#1565C0', food: '#2E7D32', energy: '#F57F17', shopping: '#6A1B9A' };
-const impactColor = { high: '#2E7D32', medium: '#F57F17', low: '#1565C0' };
+// ── Dark Glass Theme tokens ────────────────────────────────────────────────────
+// C is rebuilt dynamically inside the component via buildC(appTheme)
+
+const CATS = {
+  transport: { icon: '🚗', label: 'Transport', bg: 'rgba(90,200,250,0.09)',   bar: '#5AC8FA', accent: '#5AC8FA' },
+  food:      { icon: '🍽️', label: 'Diet',      bg: 'rgba(178,208,84,0.09)',   bar: '#B2D054', accent: '#B2D054' },
+  energy:    { icon: '⚡',  label: 'Energy',    bg: 'rgba(245,158,11,0.09)',   bar: '#F59E0B', accent: '#F59E0B' },
+  shopping:  { icon: '🛍️', label: 'Shopping',  bg: 'rgba(244,63,94,0.09)',    bar: '#F43F5E', accent: '#F43F5E' },
+};
+
+const CAT_ORDER = ['transport', 'food', 'energy', 'shopping'];
+
+const IMPACT_COLOR  = { high: '#5AC8FA', medium: '#F59E0B', low: '#F43F5E' };
+
+// Professional palette for donut chart
+const DONUT_COLORS = {
+  transport: '#5AC8FA',
+  food:      '#B2D054',
+  energy:    '#F59E0B',
+  shopping:  '#A855F7',
+};
+
+const DEFAULT_LIMIT = 6.8;
 
 export default function ReportsScreen({ navigation }) {
+  const { user } = useAuth();
+  const { theme: appTheme } = useAppTheme();
+  const C = useMemo(() => buildC(appTheme), [appTheme]);
+  const s = useMemo(() => makeStyles(C), [C]);
+  const DAILY_LIMIT = user?.dailyThreshold ?? DEFAULT_LIMIT;
   const [summary, setSummary]         = useState(null);
-  const [activities, setActivities]   = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [aiLoading, setAiLoading]     = useState(false);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
+  const [activeTab, setActiveTab] = useState('daily'); // 'daily' | 'weekly' | 'monthly'
+  const barAnim = useRef(new Animated.Value(0)).current;
+  const [barProg, setBarProg] = useState(0);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [sumRes, actRes] = await Promise.all([
-        getActivitySummary(),
-        getActivities({ days: 30, limit: 50 }),
-      ]);
+      const sumRes = await getActivitySummary();
       setSummary(sumRes.data);
-      setActivities(actRes.data.data);
     } catch { /* ignore */ }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
@@ -40,113 +125,392 @@ export default function ReportsScreen({ navigation }) {
     finally { setAiLoading(false); }
   }, []);
 
-  useEffect(() => { fetchAll(); fetchSuggestions(); }, [fetchAll, fetchSuggestions]);
+  useEffect(() => {
+    fetchAll();
+    fetchSuggestions();
+    // Kick off bar animation on mount
+    const id = barAnim.addListener(({ value }) => setBarProg(value));
+    Animated.timing(barAnim, {
+      toValue: 1, duration: 1000,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+    return () => barAnim.removeListener(id);
+  }, []);
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => { fetchAll(); fetchSuggestions(); });
     return unsub;
-  }, [navigation, fetchAll, fetchSuggestions]);
+  }, [navigation]);
 
-  if (loading) return <Loading message="Loading reports..." />;
+  if (loading) {
+    return (
+      <LinearGradient colors={appTheme.bgGrad} style={s.loader}>
+        <ActivityIndicator size="large" color={C.green600} />
+        <Text style={s.loaderTxt}>Loading your carbon reports…</Text>
+      </LinearGradient>
+    );
+  }
 
+  // ── Data ─────────────────────────────────────────────────────────────────
   const weekly  = summary?.weekly  ?? [];
   const monthly = summary?.monthly ?? { breakdown: [], total: 0 };
-  const stats   = summary?.stats;
+  const stats   = summary?.stats   ?? {};
+  const daily30 = summary?.daily30 ?? [];
+  const weekly4 = summary?.weekly4 ?? [];
 
-  const barLabels = monthly.breakdown.map(b => b._id.slice(0, 4));
-  const barValues = monthly.breakdown.map(b => parseFloat(b.total.toFixed(1)));
+  const todayStr     = new Date().toISOString().slice(0, 10);
+  const monthlyTotal = parseFloat((monthly.total ?? 0).toFixed(1));
 
-  const lineLabels = weekly.map(d => d.label);
-  const lineValues = weekly.map(d => parseFloat(d.co2e.toFixed(2)));
-  const hasLine    = lineValues.some(v => v > 0);
-  const hasBar     = barValues.some(v => v > 0);
+  // Daily-tab stats (30 days)
+  const maxDaily30   = Math.max(...daily30.map(d => d.co2e), 0.1);
+  const daily30Avg   = parseFloat((daily30.reduce((s, d) => s + d.co2e, 0) / 30).toFixed(1));
+  const daily30Best  = [...daily30].sort((a, b) => a.co2e - b.co2e).find(d => d.co2e > 0);
+
+  // Weekly-tab stats
+  const maxWeekly4   = Math.max(...weekly4.map(w => w.co2e), 0.1);
+  const weekly4Total = parseFloat(weekly4.reduce((s, w) => s + w.co2e, 0).toFixed(1));
+  const weekly4Avg   = weekly4.length > 0 ? parseFloat((weekly4Total / weekly4.length).toFixed(1)) : 0;
+  const weekly4Best  = [...weekly4].sort((a, b) => a.co2e - b.co2e).find(w => w.co2e > 0);
+
+  // Monthly: build full 4-category array (fill missing with 0)
+  const monthBreakdown = CAT_ORDER.map(cat => {
+    const found = monthly.breakdown.find(b => b._id === cat);
+    return { cat, total: found?.total ?? 0, count: found?.count ?? 0 };
+  });
 
   return (
+    <ScreenTransition>
+    <LinearGradient colors={appTheme.bgGrad} style={{ flex: 1 }}>
     <ScrollView
-      style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={Colors.primary} colors={[Colors.primary]} />}
+      style={s.root}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => { setRefreshing(true); fetchAll(); }}
+          tintColor={C.green600}
+          colors={[C.green600]}
+        />
+      }
     >
-      {/* Header */}
-      <View style={styles.hero}>
-        <Text style={styles.heroIcon}>📊</Text>
-        <Text style={styles.heroTitle}>Carbon Reports</Text>
-        <Text style={styles.heroSub}>Your 30-day emission analysis</Text>
-      </View>
+      {/* ══════════════════════════════════════════════════════════════
+          HEADER
+      ══════════════════════════════════════════════════════════════ */}
+      <LinearGradient colors={[C.green50, C.teal50, 'transparent']} style={s.header}>
+        <Text style={s.headerTitle}>📊 Carbon Reports</Text>
+        <Text style={s.headerSub}>Your 30-day emission analysis</Text>
 
-      {/* Summary Cards */}
-      <View style={styles.statsRow}>
-        {[
-          { label: 'Monthly Total', value: `${monthly.total.toFixed(1)} kg`, icon: '📅', color: Colors.primary },
-          { label: 'Eco Score',     value: stats?.ecoScore ?? 50,            icon: '🌍', color: Colors.success },
-          { label: 'Streak',        value: `${stats?.currentStreak ?? 0}d`,  icon: '🔥', color: Colors.warning },
-          { label: 'Activities',    value: stats?.totalActivities ?? 0,       icon: '📝', color: Colors.secondary },
-        ].map((s, i) => (
-          <View key={i} style={[styles.statCard, { borderTopColor: s.color }]}>
-            <Text style={styles.statIcon}>{s.icon}</Text>
-            <Text style={[styles.statValue, { color: s.color }]}>{s.value}</Text>
-            <Text style={styles.statLabel}>{s.label}</Text>
-          </View>
-        ))}
-      </View>
+        {/* 4 summary pills inside header */}
+        <View style={s.summaryRow}>
+          {[
+            { label: 'Monthly Total', value: `${monthlyTotal} kg`, icon: '📅', color: C.teal100   },
+            { label: 'Eco Score',     value: stats.ecoScore ?? 50, icon: '🌍', color: C.green100  },
+            { label: 'Day Streak',    value: `${stats.currentStreak ?? 0}d`, icon: '🔥', color: C.amber100 },
+            { label: 'Activities',    value: stats.totalActivities ?? 0,      icon: '📝', color: C.coral100 },
+          ].map((p, i) => (
+            <View key={i} style={s.summaryPill}>
+              <Text style={s.summaryPillIcon}>{p.icon}</Text>
+              <Text style={[s.summaryPillVal, { color: p.color }]}>{p.value}</Text>
+              <Text style={s.summaryPillLbl}>{p.label}</Text>
+            </View>
+          ))}
+        </View>
+      </LinearGradient>
 
-      {/* 7-Day Line Chart */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>📈 Daily Emissions (7 Days)</Text>
-        <Text style={styles.cardSub}>kg CO₂ per day</Text>
-        {hasLine ? (
-          <LineChart
-            data={{ labels: lineLabels, datasets: [{ data: lineValues, color: () => Colors.primary, strokeWidth: 2 }] }}
-            width={W - 64}
-            height={180}
-            chartConfig={chartConfig}
-            bezier
-            style={{ marginTop: 10, borderRadius: Radii.md }}
-            withInnerLines={false}
-          />
-        ) : (
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>No data yet — log some activities to see trends</Text>
-          </View>
-        )}
-      </View>
+      {/* ══════════════════════════════════════════════════════════════
+          EMISSIONS OVERVIEW  — Daily / Weekly / Monthly tabs
+      ══════════════════════════════════════════════════════════════ */}
+      <View style={s.section}>
+        <View style={s.sectionHdr}>
+          <Text style={s.sectionTitle}>📊 Emissions Overview</Text>
+          <Text style={s.sectionSub}>Last 30 days</Text>
+        </View>
 
-      {/* Monthly Bar Chart */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>📊 Monthly by Category</Text>
-        <Text style={styles.cardSub}>kg CO₂ breakdown</Text>
-        {hasBar ? (
-          <BarChart
-            data={{ labels: barLabels, datasets: [{ data: barValues }] }}
-            width={W - 64}
-            height={180}
-            chartConfig={barChartConfig}
-            style={{ marginTop: 10, borderRadius: Radii.md }}
-            showValuesOnTopOfBars
-            fromZero
-          />
-        ) : (
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>No monthly data yet</Text>
-          </View>
-        )}
-      </View>
+        {/* Tab switcher */}
+        <View style={s.tabRow}>
+          {[
+            { key: 'daily',   label: 'Daily'   },
+            { key: 'weekly',  label: 'Weekly'  },
+            { key: 'monthly', label: 'Monthly' },
+          ].map(t => (
+            <TouchableOpacity
+              key={t.key}
+              style={[s.tabBtn, activeTab === t.key && s.tabBtnActive]}
+              onPress={() => setActiveTab(t.key)}
+              activeOpacity={0.8}
+            >
+              <Text style={[s.tabBtnTxt, activeTab === t.key && s.tabBtnTxtActive]}>
+                {t.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-      {/* Category Breakdown */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>🗂️ Category Breakdown</Text>
-        {monthly.breakdown.length === 0 ? (
-          <View style={styles.empty}><Text style={styles.emptyText}>No data yet</Text></View>
-        ) : (
-          monthly.breakdown.map((b, i) => {
-            const pct = monthly.total > 0 ? (b.total / monthly.total) * 100 : 0;
-            const color = catColor[b._id] ?? Colors.primary;
-            return (
-              <View key={i} style={styles.catRow}>
-                <View style={styles.catMeta}>
-                  <Text style={styles.catName}>{b._id.charAt(0).toUpperCase() + b._id.slice(1)}</Text>
-                  <Text style={styles.catKg}>{b.total.toFixed(1)} kg · {pct.toFixed(0)}%</Text>
+        {/* ── DAILY TAB: 30-day scrollable bar chart ── */}
+        {activeTab === 'daily' && (
+          <View>
+            <View style={s.weekStatsRow}>
+              <View style={[s.weekStat, { backgroundColor: C.teal50, borderColor: C.teal100 }]}>
+                <Text style={s.weekStatVal}>{daily30Avg}</Text>
+                <Text style={[s.weekStatLbl, { color: C.teal600 }]}>daily avg</Text>
+              </View>
+              <View style={[s.weekStat, { backgroundColor: C.green50, borderColor: C.green100 }]}>
+                <Text style={s.weekStatVal}>{daily30Best ? parseFloat(daily30Best.co2e.toFixed(1)) : 0}</Text>
+                <Text style={[s.weekStatLbl, { color: C.green600 }]}>best day</Text>
+              </View>
+              <View style={[s.weekStat, { backgroundColor: C.amber50, borderColor: C.amber100 }]}>
+                <Text style={s.weekStatVal}>{DAILY_LIMIT}</Text>
+                <Text style={[s.weekStatLbl, { color: C.amber600 }]}>daily limit</Text>
+              </View>
+            </View>
+
+            <View style={s.dualChartCard}>
+              <Text style={s.miniChartLabel}>Last 30 days · kg CO₂ per day</Text>
+              {daily30.every(d => d.co2e === 0) ? (
+                <View style={s.emptyBox}>
+                  <Text style={s.emptyIcon}>📭</Text>
+                  <Text style={s.emptyTxt}>Log activities to see daily trends</Text>
                 </View>
-                <View style={styles.barBg}>
-                  <View style={[styles.barFill, { width: `${pct}%`, backgroundColor: color }]} />
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                  <View style={s.daily30Area}>
+                    {daily30.map((day, i) => {
+                      const isToday  = day.date === todayStr;
+                      const over     = day.co2e > DAILY_LIMIT;
+                      const barColor = over ? C.coral600 : isToday ? C.teal600 : C.green600;
+                      const h        = maxDaily30 > 0
+                        ? Math.max((day.co2e / maxDaily30) * 80, day.co2e > 0 ? 4 : 0)
+                        : 0;
+                      return (
+                        <View key={i} style={s.daily30Col}>
+                          {day.co2e > 0 && (
+                            <Text style={s.daily30Val}>{parseFloat(day.co2e.toFixed(1))}</Text>
+                          )}
+                          <View style={s.daily30Track}>
+                            <View style={[s.daily30Fill, { height: h, backgroundColor: barColor, opacity: isToday ? 1 : 0.78 }]} />
+                          </View>
+                          <Text style={[s.daily30DayLbl, isToday && { color: C.teal600, fontWeight: '800' }]}>
+                            {isToday ? '●' : day.dayLabel[0]}
+                          </Text>
+                          <Text style={s.daily30DateLbl}>{day.label.replace(' ', '\n')}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              )}
+              <View style={[s.miniLegendRow, { marginTop: 12 }]}>
+                {[{ c: C.teal600, l: 'Today' }, { c: C.green600, l: 'Under limit' }, { c: C.coral600, l: 'Over limit' }].map((l, i) => (
+                  <View key={i} style={s.miniLegendItem}>
+                    <View style={[s.miniLegendDot, { backgroundColor: l.c }]} />
+                    <Text style={s.miniLegendTxt}>{l.l}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* ── WEEKLY TAB: week-by-week bar chart ── */}
+        {activeTab === 'weekly' && (
+          <View>
+            <View style={s.weekStatsRow}>
+              <View style={[s.weekStat, { backgroundColor: C.teal50, borderColor: C.teal100 }]}>
+                <Text style={s.weekStatVal}>{weekly4Avg}</Text>
+                <Text style={[s.weekStatLbl, { color: C.teal600 }]}>weekly avg</Text>
+              </View>
+              <View style={[s.weekStat, { backgroundColor: C.green50, borderColor: C.green100 }]}>
+                <Text style={s.weekStatVal}>{weekly4Best ? parseFloat(weekly4Best.co2e.toFixed(1)) : 0}</Text>
+                <Text style={[s.weekStatLbl, { color: C.green600 }]}>best week</Text>
+              </View>
+              <View style={[s.weekStat, { backgroundColor: C.amber50, borderColor: C.amber100 }]}>
+                <Text style={s.weekStatVal}>{weekly4Total}</Text>
+                <Text style={[s.weekStatLbl, { color: C.amber600 }]}>30-day total</Text>
+              </View>
+            </View>
+
+            <View style={s.dualChartCard}>
+              {weekly4.length === 0 ? (
+                <View style={s.emptyBox}>
+                  <Text style={s.emptyIcon}>📭</Text>
+                  <Text style={s.emptyTxt}>Log activities to see weekly trends</Text>
+                </View>
+              ) : (
+                <View>
+                  <Text style={s.miniChartLabel}>Last {weekly4.length} weeks · kg CO₂ per week</Text>
+                  <View style={[s.barMiniArea, { height: 140, marginTop: 8 }]}>
+                    {weekly4.map((week, i) => {
+                      const isCurrent = i === weekly4.length - 1;
+                      const h         = maxWeekly4 > 0
+                        ? Math.max((week.co2e / maxWeekly4) * 100, week.co2e > 0 ? 4 : 0)
+                        : 0;
+                      const animH     = h * barProg;
+                      const barColor  = isCurrent ? C.teal600 : C.green600;
+                      return (
+                        <View key={i} style={[s.miniBarCol, { justifyContent: 'flex-end', paddingBottom: 28 }]}>
+                          <Text style={s.miniBarVal}>{week.co2e > 0 ? parseFloat(week.co2e.toFixed(1)) : ''}</Text>
+                          <View style={[s.miniBarTrack, { height: 100 }]}>
+                            <View style={[s.miniBarFill, { height: animH, backgroundColor: barColor, opacity: isCurrent ? 1 : 0.72 }]} />
+                          </View>
+                          <Text style={[s.miniBarLbl, isCurrent && { color: C.teal600, fontWeight: '800' }]}>
+                            {isCurrent ? '●' : week.label}
+                          </Text>
+                          <Text style={s.weekStartLbl}>{week.weekStart}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                  <View style={s.miniLegendRow}>
+                    {[{ c: C.teal600, l: 'This week' }, { c: C.green600, l: 'Past weeks' }].map((l, i) => (
+                      <View key={i} style={s.miniLegendItem}>
+                        <View style={[s.miniLegendDot, { backgroundColor: l.c }]} />
+                        <Text style={s.miniLegendTxt}>{l.l}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* ── MONTHLY TAB: category grid + donut + stacked bar ── */}
+        {activeTab === 'monthly' && (
+          <View>
+            <View style={s.weekStatsRow}>
+              <View style={[s.weekStat, { backgroundColor: C.teal50, borderColor: C.teal100 }]}>
+                <Text style={s.weekStatVal}>{monthlyTotal}</Text>
+                <Text style={[s.weekStatLbl, { color: C.teal600 }]}>month total</Text>
+              </View>
+              <View style={[s.weekStat, { backgroundColor: C.green50, borderColor: C.green100 }]}>
+                <Text style={s.weekStatVal}>{monthBreakdown.filter(b => b.total > 0).length}</Text>
+                <Text style={[s.weekStatLbl, { color: C.green600 }]}>categories</Text>
+              </View>
+              <View style={[s.weekStat, { backgroundColor: C.amber50, borderColor: C.amber100 }]}>
+                <Text style={s.weekStatVal}>{DAILY_LIMIT}</Text>
+                <Text style={[s.weekStatLbl, { color: C.amber600 }]}>daily limit</Text>
+              </View>
+            </View>
+
+            {/* 2×2 category cards */}
+            <View style={s.catGrid}>
+              {monthBreakdown.map(({ cat, total }) => {
+                const m   = CATS[cat] ?? CATS.transport;
+                const pct = monthlyTotal > 0 ? (total / monthlyTotal) * 100 : 0;
+                const kg  = parseFloat(total.toFixed(1));
+                return (
+                  <View key={cat} style={[s.catCard, { backgroundColor: m.bg, borderColor: C.border }]}>
+                    <View style={s.catCardTop}>
+                      <Text style={s.catCardIcon}>{m.icon}</Text>
+                      <Text style={[s.catCardPct, { color: m.accent }]}>{pct.toFixed(0)}%</Text>
+                    </View>
+                    <Text style={[s.catCardVal, { color: C.green800 }]}>{kg}</Text>
+                    <Text style={s.catCardLbl}>{m.label} CO₂ (kg)</Text>
+                    <View style={s.catBarBg}>
+                      <View style={[s.catBarFill, { width: `${Math.min(pct, 100)}%`, backgroundColor: m.bar }]} />
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Donut + stacked bar */}
+            {monthlyTotal > 0 && (() => {
+              const donutData = monthBreakdown
+                .filter(b => b.total > 0)
+                .map(b => ({
+                  value: b.total,
+                  color: DONUT_COLORS[b.cat] ?? '#B2D054',
+                  label: CATS[b.cat]?.label ?? b.cat,
+                  pct:   monthlyTotal > 0 ? ((b.total / monthlyTotal) * 100).toFixed(0) : 0,
+                }));
+              return (
+                <View style={s.dualChartCard}>
+                  <View style={s.dualRow}>
+                    <View style={s.donutSide}>
+                      <Text style={s.miniChartLabel}>Monthly Split</Text>
+                      <View style={s.donutWrap}>
+                        <DonutChart data={donutData} total={monthlyTotal} size={130} stroke={18} />
+                        <View style={s.donutCenter} pointerEvents="none">
+                          <Text style={s.donutCenterVal}>{monthlyTotal.toFixed(0)}</Text>
+                          <Text style={s.donutCenterUnit}>kg</Text>
+                        </View>
+                      </View>
+                      <View style={s.donutLegend}>
+                        {donutData.map((d, i) => (
+                          <View key={i} style={s.donutLegendItem}>
+                            <View style={[s.donutLegendDot, { backgroundColor: d.color }]} />
+                            <Text style={s.donutLegendTxt}>{d.label}</Text>
+                            <Text style={[s.donutLegendPct, { color: d.color }]}>{d.pct}%</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                    <View style={s.divider} />
+                    <View style={[s.barSide, { justifyContent: 'center' }]}>
+                      <Text style={s.miniChartLabel}>Proportion</Text>
+                      <View style={[s.stackedBar, { marginTop: 10 }]}>
+                        {monthBreakdown.filter(b => b.total > 0).map(({ cat, total }) => {
+                          const m   = CATS[cat];
+                          const pct = (total / monthlyTotal) * 100;
+                          return <View key={cat} style={[s.stackedSegment, { flex: pct, backgroundColor: m.bar }]} />;
+                        })}
+                      </View>
+                      <View style={[s.stackedLegend, { marginTop: 14, flexDirection: 'column', gap: 6 }]}>
+                        {monthBreakdown.filter(b => b.total > 0).map(({ cat, total }) => {
+                          const m   = CATS[cat];
+                          const pct = ((total / monthlyTotal) * 100).toFixed(0);
+                          return (
+                            <View key={cat} style={s.stackedLegendItem}>
+                              <View style={[s.stackedDot, { backgroundColor: m.bar }]} />
+                              <Text style={s.stackedLegendTxt}>{m.icon} {m.label} {pct}%</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              );
+            })()}
+          </View>
+        )}
+      </View>
+
+      {/* ══════════════════════════════════════════════════════════════
+          AI SUGGESTIONS
+      ══════════════════════════════════════════════════════════════ */}
+      <View style={s.section}>
+        <View style={s.sectionHdr}>
+          <Text style={s.sectionTitle}>🤖 AI Suggestions</Text>
+          <View style={s.aiBadge}><Text style={s.aiBadgeTxt}>Gemini AI</Text></View>
+        </View>
+        <Text style={s.aiSub}>Personalised tips based on your data</Text>
+
+        {aiLoading ? (
+          <View style={s.emptyBox}>
+            <ActivityIndicator size="small" color={C.teal600} />
+            <Text style={s.emptyTxt}>Generating personalised tips…</Text>
+          </View>
+        ) : suggestions.length === 0 ? (
+          <View style={s.emptyBox}>
+            <Text style={s.emptyIcon}>💡</Text>
+            <Text style={s.emptyTxt}>Log activities to receive AI suggestions</Text>
+          </View>
+        ) : (
+          suggestions.map((sg, i) => {
+            const ic = IMPACT_COLOR[sg.impact] ?? C.teal600;
+            return (
+              <View key={i} style={[s.sugRow, { borderLeftColor: ic }]}>
+                <Text style={s.sugIcon}>{sg.icon ?? '🌱'}</Text>
+                <View style={s.sugBody}>
+                  <View style={s.sugTopRow}>
+                    <Text style={s.sugTitle}>{sg.title}</Text>
+                    <View style={[s.impactTag, { backgroundColor: ic + '22' }]}>
+                      <Text style={[s.impactTagTxt, { color: ic }]}>{sg.impact} impact</Text>
+                    </View>
+                  </View>
+                  <Text style={s.sugTip}>{sg.tip}</Text>
                 </View>
               </View>
             );
@@ -154,112 +518,151 @@ export default function ReportsScreen({ navigation }) {
         )}
       </View>
 
-      {/* AI Suggestions */}
-      <View style={styles.card}>
-        <View style={styles.aiHeader}>
-          <Text style={styles.cardTitle}>🤖 AI Suggestions</Text>
-          <Text style={styles.aiBadge}>Powered by Gemini</Text>
-        </View>
-        <Text style={styles.cardSub}>Personalized eco-friendly tips based on your data</Text>
-        {aiLoading ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>Generating personalized tips...</Text>
-          </View>
-        ) : suggestions.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>Log activities to get AI suggestions</Text>
-          </View>
-        ) : (
-          suggestions.map((s, i) => (
-            <View key={i} style={[styles.suggestionRow, { borderLeftColor: impactColor[s.impact] || '#2E7D32' }]}>
-              <Text style={styles.suggestionIcon}>{s.icon}</Text>
-              <View style={styles.suggestionBody}>
-                <View style={styles.suggestionTop}>
-                  <Text style={styles.suggestionTitle}>{s.title}</Text>
-                  <View style={[styles.impactBadge, { backgroundColor: impactColor[s.impact] + '20' }]}>
-                    <Text style={[styles.impactText, { color: impactColor[s.impact] }]}>{s.impact} impact</Text>
-                  </View>
-                </View>
-                <Text style={styles.suggestionTip}>{s.tip}</Text>
-              </View>
-            </View>
-          ))
-        )}
-      </View>
-
-      {/* Recent Activities */}
-      <Text style={styles.sectionTitle}>📋 Recent Activities</Text>
-      {activities.length === 0 ? (
-        <View style={[styles.card, styles.empty]}>
-          <Text style={styles.emptyText}>No activities logged yet</Text>
-        </View>
-      ) : (
-        activities.slice(0, 10).map((a, i) => (
-          <View key={i} style={styles.actRow}>
-            <View style={[styles.actDot, { backgroundColor: catColor[a.category] ?? Colors.primary }]} />
-            <View style={styles.actInfo}>
-              <Text style={styles.actLabel}>{a.label}</Text>
-              <Text style={styles.actMeta}>{a.value} {a.unit} · {new Date(a.date).toLocaleDateString()}</Text>
-            </View>
-            <Text style={[styles.actCo2, { color: a.co2e < 2 ? Colors.success : Colors.warning }]}>
-              {a.co2e.toFixed(2)} kg
-            </Text>
-          </View>
-        ))
-      )}
-
-      <View style={{ height: 40 }} />
+      <View style={{ height: 36 }} />
     </ScrollView>
+    </LinearGradient>
+    </ScreenTransition>
   );
 }
 
-const chartConfig = {
-  backgroundColor: Colors.white, backgroundGradientFrom: Colors.white, backgroundGradientTo: Colors.white,
-  decimalPlaces: 1, color: (o = 1) => `rgba(46,125,50,${o})`, labelColor: () => Colors.textMuted,
-  propsForDots: { r: '4', strokeWidth: '2', stroke: Colors.primary },
-};
-const barChartConfig = {
-  backgroundColor: Colors.white, backgroundGradientFrom: Colors.white, backgroundGradientTo: Colors.white,
-  decimalPlaces: 0, color: (o = 1) => `rgba(0,137,123,${o})`, labelColor: () => Colors.textMuted,
-};
+// ── Styles (factory — called via useMemo so colours update with theme) ────────
+function makeStyles(C) { return StyleSheet.create({
+  root:       { flex: 1, backgroundColor: 'transparent' },
+  loader:     { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
+  loaderTxt: { fontSize: 14, color: C.textSub },
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  hero: { backgroundColor: Colors.secondary, alignItems: 'center', paddingTop: 40, paddingBottom: 32 },
-  heroIcon:  { fontSize: 40, marginBottom: 8 },
-  heroTitle: { fontSize: 24, fontWeight: '800', color: Colors.white },
-  heroSub:   { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
-  statsRow:  { flexDirection: 'row', paddingHorizontal: Spacing.md, gap: Spacing.sm, marginTop: Spacing.md },
-  statCard:  { flex: 1, backgroundColor: Colors.white, borderRadius: Radii.lg, padding: 10, alignItems: 'center', borderTopWidth: 3, ...Shadow.sm },
-  statIcon:  { fontSize: 18, marginBottom: 4 },
-  statValue: { fontSize: 14, fontWeight: '800' },
-  statLabel: { fontSize: 10, color: Colors.textMuted, marginTop: 2, textAlign: 'center' },
-  card:      { backgroundColor: Colors.white, margin: Spacing.md, marginTop: Spacing.sm, borderRadius: Radii.lg, padding: Spacing.md, ...Shadow.sm },
-  cardTitle: { fontSize: 15, fontWeight: '800', color: Colors.dark },
-  cardSub:   { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  empty:     { alignItems: 'center', paddingVertical: Spacing.lg },
-  emptyText: { color: Colors.textMuted, fontSize: 13 },
-  catRow:    { marginVertical: 8 },
-  catMeta:   { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  catName:   { fontSize: 13, fontWeight: '700', color: Colors.dark },
-  catKg:     { fontSize: 12, color: Colors.textMuted },
-  barBg:     { height: 10, backgroundColor: Colors.background, borderRadius: 5, overflow: 'hidden' },
-  barFill:   { height: 10, borderRadius: 5 },
-  aiHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  aiBadge:   { fontSize: 10, fontWeight: '700', color: '#1565C0', backgroundColor: '#E3F2FD', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  suggestionRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 12, paddingLeft: 10, borderLeftWidth: 3 },
-  suggestionIcon: { fontSize: 22, marginRight: 10, marginTop: 2 },
-  suggestionBody: { flex: 1 },
-  suggestionTop:  { flexDirection: 'row', alignItems: 'center', marginBottom: 3 },
-  suggestionTitle:{ fontSize: 13, fontWeight: '800', color: Colors.dark, flex: 1 },
-  impactBadge:    { borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 6 },
-  impactText:     { fontSize: 10, fontWeight: '700' },
-  suggestionTip:  { fontSize: 12, color: Colors.textMuted, lineHeight: 17 },
-  sectionTitle: { fontSize: 15, fontWeight: '800', color: Colors.dark, marginHorizontal: Spacing.md, marginTop: Spacing.sm, marginBottom: 4 },
-  actRow:    { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white, marginHorizontal: Spacing.md, marginBottom: 6, borderRadius: Radii.md, padding: 12, ...Shadow.sm },
-  actDot:    { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
-  actInfo:   { flex: 1 },
-  actLabel:  { fontSize: 13, fontWeight: '700', color: Colors.dark },
-  actMeta:   { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  actCo2:    { fontSize: 13, fontWeight: '800' },
-});
+  /* Header */
+  header:      { paddingTop: Platform.OS === 'ios' ? 56 : 38, paddingBottom: 24, paddingHorizontal: 18 },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: C.text },
+  headerSub:   { fontSize: 12, color: C.textSub, marginTop: 4, marginBottom: 20 },
+  summaryRow:  { flexDirection: 'row', gap: 8 },
+  summaryPill: { flex: 1, backgroundColor: C.card, borderRadius: 14,
+                 paddingVertical: 10, alignItems: 'center',
+                 borderWidth: 1, borderColor: C.border },
+  summaryPillIcon: { fontSize: 16, marginBottom: 4 },
+  summaryPillVal:  { fontSize: 14, fontWeight: '800' },
+  summaryPillLbl:  { fontSize: 9, color: C.textMuted, marginTop: 2, fontWeight: '600', textAlign: 'center' },
+
+  /* Section */
+  section:    { marginHorizontal: 16, marginTop: 22 },
+  sectionHdr: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  sectionTitle:{ fontSize: 15, fontWeight: '800', color: C.green800 },
+  sectionSub:  { fontSize: 11, color: C.textMuted, fontWeight: '500' },
+
+  /* Weekly stats row */
+  weekStatsRow: { flexDirection: 'row', gap: 8, marginBottom: 16, marginTop: 10 },
+  weekStat:     { flex: 1, borderRadius: 14, paddingVertical: 10, alignItems: 'center', borderWidth: 1 },
+  weekStatVal:  { fontSize: 18, fontWeight: '800', color: C.green800 },
+  weekStatLbl:  { fontSize: 10, fontWeight: '600', marginTop: 2 },
+
+  /* ── Dual chart card ── */
+  dualChartCard: {
+    backgroundColor: C.card, borderRadius: 20,
+    borderWidth: 1, borderColor: C.border,
+    padding: 14, ...C.cardShadow,
+  },
+  dualRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+
+  // Bar chart side  (equal flex)
+  barSide:       { flex: 1 },
+  miniChartLabel:{ fontSize: 10, fontWeight: '700', color: C.textSub, marginBottom: 8, letterSpacing: 0.3 },
+  barMiniArea:   { flexDirection: 'row', alignItems: 'flex-end', height: 110, gap: 2 },
+  miniBarCol:    { flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: 110 },
+  miniBarVal:    { fontSize: 7, color: C.textSub, fontWeight: '700', marginBottom: 2 },
+  miniBarTrack:  { width: '76%', height: 90, justifyContent: 'flex-end' },
+  miniBarFill:   { width: '100%', borderRadius: 5 },
+  miniBarLbl:    { fontSize: 8, color: C.textMuted, marginTop: 4, fontWeight: '500' },
+  miniLegendRow: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' },
+  miniLegendItem:{ flexDirection: 'row', alignItems: 'center', gap: 3 },
+  miniLegendDot: { width: 7, height: 7, borderRadius: 4 },
+  miniLegendTxt: { fontSize: 9, color: C.textSub },
+
+  // Divider
+  divider: { width: 1, backgroundColor: C.border, alignSelf: 'stretch', marginHorizontal: 5 },
+
+  // Donut chart side  (equal flex)
+  donutSide:       { flex: 1, alignItems: 'center' },
+  donutWrap:       { position: 'relative', alignItems: 'center', justifyContent: 'center' },
+  donutCenter:     {
+    position: 'absolute', alignItems: 'center', justifyContent: 'center',
+    width: 60, height: 60,
+  },
+  donutCenterVal:  { fontSize: 18, fontWeight: '900', color: C.green800 },
+  donutCenterUnit: { fontSize: 9, color: C.textMuted, fontWeight: '600', marginTop: 1 },
+  donutEmpty:      { width: 130, height: 130, borderRadius: 65, borderWidth: 18,
+                     borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  donutEmptyTxt:   { fontSize: 10, color: C.textMuted },
+  donutLegend:     { marginTop: 8, width: '100%', gap: 4 },
+  donutLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  donutLegendDot:  { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  donutLegendTxt:  { fontSize: 9, color: C.textSub, flex: 1 },
+  donutLegendPct:  { fontSize: 9, fontWeight: '800' },
+
+  // Old chart refs kept for legend reuse
+  chartLegend:  { flexDirection: 'row', gap: 14, marginTop: 12, justifyContent: 'center' },
+  legendItem:   { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot:    { width: 10, height: 10, borderRadius: 5 },
+  legendTxt:    { fontSize: 10, color: C.textSub, fontWeight: '500' },
+
+  /* Monthly category grid */
+  catGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 },
+  catCard:    { width: (W - 52) / 2, borderRadius: 16, padding: 14, borderWidth: 1 },
+  catCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  catCardIcon:{ fontSize: 20 },
+  catCardPct: { fontSize: 14, fontWeight: '800' },
+  catCardVal: { fontSize: 26, fontWeight: '800', marginBottom: 2 },
+  catCardLbl: { fontSize: 10, color: C.textSub, fontWeight: '500', marginBottom: 8 },
+  catBarBg:   { height: 5, backgroundColor: C.border, borderRadius: 4, overflow: 'hidden' },
+  catBarFill: { height: 5, borderRadius: 4 },
+
+  /* Stacked proportion bar */
+  stackedBarWrap:   { marginTop: 16, backgroundColor: C.card, borderRadius: 16,
+                      padding: 14, borderWidth: 1, borderColor: C.border },
+  stackedBarTitle:  { fontSize: 12, fontWeight: '600', color: C.textSub, marginBottom: 10 },
+  stackedBar:       { flexDirection: 'row', height: 14, borderRadius: 8, overflow: 'hidden', gap: 1 },
+  stackedSegment:   { borderRadius: 0 },
+  stackedLegend:    { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 12 },
+  stackedLegendItem:{ flexDirection: 'row', alignItems: 'center', gap: 5 },
+  stackedDot:       { width: 10, height: 10, borderRadius: 5 },
+  stackedLegendTxt: { fontSize: 11, color: C.textSub, fontWeight: '500' },
+
+  /* AI suggestions */
+  aiBadge:    { backgroundColor: C.teal50, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, borderWidth: 1, borderColor: C.teal100 },
+  aiBadgeTxt: { fontSize: 10, fontWeight: '700', color: C.teal600 },
+  aiSub:      { fontSize: 12, color: C.textMuted, marginBottom: 14, marginTop: 2 },
+  sugRow:     { flexDirection: 'row', backgroundColor: C.card, borderRadius: 14,
+                padding: 14, marginBottom: 8, borderWidth: 1, borderColor: C.border,
+                borderLeftWidth: 4 },
+  sugIcon:    { fontSize: 22, marginRight: 12, marginTop: 2, flexShrink: 0 },
+  sugBody:    { flex: 1 },
+  sugTopRow:  { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  sugTitle:   { fontSize: 13, fontWeight: '700', color: C.text, flex: 1 },
+  impactTag:  { borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 6 },
+  impactTagTxt:{ fontSize: 9, fontWeight: '700' },
+  sugTip:     { fontSize: 12, color: C.textSub, lineHeight: 17 },
+
+
+  /* Empty state */
+  emptyBox:  { alignItems: 'center', paddingVertical: 28, gap: 8 },
+  emptyIcon: { fontSize: 38 },
+  emptyTxt:  { fontSize: 13, color: C.textMuted, textAlign: 'center' },
+
+  /* Tab switcher */
+  tabRow:          { flexDirection: 'row', backgroundColor: C.pillBg, borderRadius: 14, padding: 3, marginBottom: 14, marginTop: 10, borderWidth: 1, borderColor: C.border },
+  tabBtn:          { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 11 },
+  tabBtnActive:    { backgroundColor: C.green600, shadowColor: C.green600, shadowOpacity: 0.35, shadowRadius: 8, elevation: 4 },
+  tabBtnTxt:       { fontSize: 13, fontWeight: '600', color: C.textSub },
+  tabBtnTxtActive: { color: '#1A2318', fontWeight: '800' },
+
+  /* Daily 30-day chart */
+  daily30Area:    { flexDirection: 'row', alignItems: 'flex-end', height: 130, gap: 3, paddingBottom: 2 },
+  daily30Col:     { width: 24, alignItems: 'center', justifyContent: 'flex-end', height: 130 },
+  daily30Val:     { fontSize: 6, color: C.textSub, fontWeight: '700', marginBottom: 2 },
+  daily30Track:   { width: 14, height: 80, justifyContent: 'flex-end' },
+  daily30Fill:    { width: '100%', borderRadius: 4 },
+  daily30DayLbl:  { fontSize: 7, color: C.textMuted, marginTop: 3, fontWeight: '500' },
+  daily30DateLbl: { fontSize: 6, color: C.textMuted, textAlign: 'center', lineHeight: 8 },
+
+  /* Weekly bar label */
+  weekStartLbl: { fontSize: 7, color: C.textMuted, textAlign: 'center', marginTop: 2 },
+}); } // end makeStyles

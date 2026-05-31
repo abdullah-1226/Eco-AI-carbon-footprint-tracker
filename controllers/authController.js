@@ -226,12 +226,14 @@ exports.googleUserInfoAuth = async (req, res, next) => {
 // Redirects browser to Google's OAuth consent page
 // Works on ALL platforms: web, mobile WebBrowser, desktop, Chrome
 exports.googleOAuthInit = (req, res) => {
+    const isMobile = req.query.mobile === 'true';
     const params = new URLSearchParams({
         client_id:     process.env.GOOGLE_CLIENT_ID,
         redirect_uri:  'http://localhost:3000/api/auth/google/callback',
         response_type: 'code',
         scope:         'openid email profile',
         access_type:   'offline',
+        state:         isMobile ? 'mobile' : 'web',
     });
     res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
 };
@@ -239,16 +241,17 @@ exports.googleOAuthInit = (req, res) => {
 // ─── @route  GET /api/auth/google/callback ───────────────────────────────────
 // Google redirects here after user grants permission
 exports.googleOAuthCallback = async (req, res) => {
-    try {
-        const { code, error } = req.query;
+    const { code, error, state } = req.query;
+    const returnUrl = state === 'mobile' ? 'ecotrack://auth' : 'http://localhost:8081';
 
+    try {
         if (error || !code) {
-            return res.redirect(`http://localhost:8081?googleError=${encodeURIComponent('Google sign-in was cancelled.')}`);
+            return res.redirect(`${returnUrl}?googleError=${encodeURIComponent('Google sign-in was cancelled.')}`);
         }
 
         const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
         if (!clientSecret || clientSecret === 'your_google_client_secret_here') {
-            return res.redirect(`http://localhost:8081?googleError=${encodeURIComponent('Google Client Secret not configured in .env')}`);
+            return res.redirect(`${returnUrl}?googleError=${encodeURIComponent('Google Client Secret not configured in .env')}`);
         }
 
         // Exchange code for tokens
@@ -270,7 +273,7 @@ exports.googleOAuthCallback = async (req, res) => {
         const { sub: googleId, email, name, picture, email_verified } = ticket.getPayload();
 
         if (!email_verified) {
-            return res.redirect(`http://localhost:8081?googleError=${encodeURIComponent('Google email is not verified.')}`);
+            return res.redirect(`${returnUrl}?googleError=${encodeURIComponent('Google email is not verified.')}`);
         }
 
         // Find or create user — auto-link if email already exists (no verification needed)
@@ -294,11 +297,11 @@ exports.googleOAuthCallback = async (req, res) => {
         }));
 
         // Redirect back to frontend with token — user is now fully logged in
-        res.redirect(`http://localhost:8081?googleToken=${jwtToken}&googleUser=${userData}`);
+        res.redirect(`${returnUrl}?googleToken=${jwtToken}&googleUser=${userData}`);
 
     } catch (err) {
         console.error('Google OAuth callback error:', err.message);
-        res.redirect(`http://localhost:8081?googleError=${encodeURIComponent('Google sign-in failed. Please try again.')}`);
+        res.redirect(`${returnUrl}?googleError=${encodeURIComponent('Google sign-in failed. Please try again.')}`);
     }
 };
 
@@ -325,9 +328,20 @@ exports.logout = async (req, res, next) => {
 // ─── @route  PUT /api/auth/updatedetails ─────────────────────────────────────
 exports.updateDetails = async (req, res, next) => {
     try {
+        const fields = {};
+        if (req.body.name               !== undefined) fields.name               = req.body.name;
+        if (req.body.email              !== undefined) fields.email              = req.body.email;
+        if (req.body.age                !== undefined) fields.age                = req.body.age;
+        if (req.body.gender             !== undefined) fields.gender             = req.body.gender;
+        if (req.body.bio                !== undefined) fields.bio                = req.body.bio;
+        if (req.body.avatar             !== undefined) fields.avatar             = req.body.avatar;
+        if (req.body.coverPhoto         !== undefined) fields.coverPhoto         = req.body.coverPhoto;
+        if (req.body.dailyThreshold     !== undefined) fields.dailyThreshold     = req.body.dailyThreshold;
+        if (req.body.onboardingComplete !== undefined) fields.onboardingComplete = req.body.onboardingComplete;
+
         const user = await User.findByIdAndUpdate(
             req.user.id,
-            { name: req.body.name, email: req.body.email },
+            fields,
             { new: true, runValidators: true }
         );
         res.status(200).json({ success: true, data: user });

@@ -3,6 +3,8 @@ import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Touchable
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useAuth } from '../../context/AuthContext';
 import { checkEmail as apiCheckEmail } from '../../api/api';
+import BackButton from '../../components/BackButton';
+import ScreenTransition from '../../components/ScreenTransition';
 import { Colors, Shadow, Radii, Spacing } from '../../theme';
 
 // Returns { score: 0-4, label, color, checks }
@@ -16,7 +18,7 @@ const getPasswordStrength = (pwd) => {
   };
   const score = Object.values(checks).filter(Boolean).length;
   const label = score <= 1 ? 'Very Weak' : score === 2 ? 'Weak' : score === 3 ? 'Fair' : score === 4 ? 'Good' : 'Strong';
-  const color = score <= 1 ? '#E53935' : score === 2 ? '#FB8C00' : score === 3 ? '#FDD835' : score === 4 ? '#66BB6A' : '#2E7D32';
+  const color = score <= 1 ? '#E53935' : score === 2 ? '#FB8C00' : score === 3 ? '#F59E0B' : score === 4 ? '#B2D054' : '#8FA832';
   return { score, label, color, checks };
 };
 
@@ -81,6 +83,9 @@ export default function RegisterScreen({ navigation }) {
   };
 
   return (
+    <ScreenTransition>
+    <View style={styles.flex}>
+    <BackButton dark />
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
@@ -254,6 +259,8 @@ export default function RegisterScreen({ navigation }) {
         <Text style={styles.footer}>🌿 EcoTrack AI — FYP Carbon Footprint Tracker</Text>
       </ScrollView>
     </KeyboardAvoidingView>
+    </View>
+    </ScreenTransition>
   );
 }
 

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { Text, TextInput } from 'react-native-paper';
 import { sendChatMessage } from '../../api/api';
+import ScreenTransition from '../../components/ScreenTransition';
 import { Colors, Shadow, Radii, Spacing } from '../../theme';
 
 const QUICK_QUESTIONS = [
@@ -67,6 +68,7 @@ export default function ChatbotScreen() {
   };
 
   return (
+    <ScreenTransition>
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Header */}
       <View style={styles.header}>
@@ -142,6 +144,7 @@ export default function ChatbotScreen() {
         />
       </View>
     </KeyboardAvoidingView>
+    </ScreenTransition>
   );
 }
 

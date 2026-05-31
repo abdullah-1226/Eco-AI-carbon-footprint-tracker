@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert,
+  View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { showAlert } from '../../utils/crossAlert';
 import { Text, TextInput, Button, Switch, HelperText, ProgressBar } from 'react-native-paper';
 import { createPost, updatePost } from '../../api/api';
 import { Colors, Shadow, Radii, Spacing } from '../../theme';
@@ -24,9 +25,9 @@ export default function CreatePostScreen({ route, navigation }) {
   }, [isEdit]);
 
   const handleSubmit = async () => {
-    if (!title.trim()) { Alert.alert('Validation Error', 'Title is required.'); return; }
+    if (!title.trim()) { showAlert('Validation Error', 'Title is required.'); return; }
     if (content.trim().length < MIN_CONTENT) {
-      Alert.alert('Validation Error', `Content must be at least ${MIN_CONTENT} characters.`);
+      showAlert('Validation Error', `Content must be at least ${MIN_CONTENT} characters.`);
       return;
     }
     const tagArray = tags.split(',').map((t) => t.trim()).filter(Boolean);
@@ -35,13 +36,13 @@ export default function CreatePostScreen({ route, navigation }) {
       const payload = { title: title.trim(), content: content.trim(), tags: tagArray, isPublished };
       if (isEdit) {
         await updatePost(editPost._id, payload);
-        Alert.alert('Success', 'Post updated successfully!', [{ text: 'OK', onPress: () => navigation.goBack() }]);
+        showAlert('Success', 'Post updated successfully!', [{ text: 'OK', onPress: () => navigation.goBack() }]);
       } else {
         await createPost(payload);
-        Alert.alert('Published!', 'Your post is now live.', [{ text: 'OK', onPress: () => navigation.goBack() }]);
+        showAlert('Published!', 'Your post is now live.', [{ text: 'OK', onPress: () => navigation.goBack() }]);
       }
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.error || 'Something went wrong.');
+      showAlert('Error', err.response?.data?.error || 'Something went wrong.');
     } finally {
       setLoading(false);
     }

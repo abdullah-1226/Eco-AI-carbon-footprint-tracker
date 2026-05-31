@@ -1,403 +1,1043 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, Dimensions } from 'react-native';
-import { Text } from 'react-native-paper';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+  View, Text, ScrollView, StyleSheet, TouchableOpacity,
+  TextInput, RefreshControl, ActivityIndicator, Dimensions,
+  Platform, ImageBackground, Animated, Easing, Image,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { LineChart, PieChart } from 'react-native-chart-kit';
-import { getActivitySummary } from '../../api/api';
+import { BlurView } from 'expo-blur';
+import Svg, { Circle, G } from 'react-native-svg';
+import { getActivitySummary, getActivities } from '../../api/api';
+import { useAppTheme, buildC } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
-import Loading from '../../components/Loading';
-import { Shadow, Radii, Spacing } from '../../theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { avatarKey } from '../profile/ProfileScreen';
+import ScreenTransition from '../../components/ScreenTransition';
+
+// ── Donut colors ──────────────────────────────────────────────────────────────
+const DONUT_COLORS = {
+  transport: '#5AC8FA',
+  food:      '#B2D054',
+  energy:    '#F59E0B',
+  shopping:  '#A855F7',
+};
+
+// ── Animated donut chart — segments draw clockwise progressively ───────────────
+function DonutChart({ data, total, size = 120, stroke = 16 }) {
+  const R      = (size - stroke - 4) / 2;
+  const CIRC   = 2 * Math.PI * R;
+  const CENTER = size / 2;
+  const [prog, setProg] = useState(0);
+  const anim   = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const id = anim.addListener(({ value }) => setProg(value));
+    Animated.timing(anim, {
+      toValue: 1, duration: 1500,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    return () => anim.removeListener(id);
+  }, []);
+
+  let cumPct = 0;
+  return (
+    <Svg width={size} height={size}>
+      <Circle cx={CENTER} cy={CENTER} r={R}
+              fill="none" stroke="#E8EDE5" strokeWidth={stroke} />
+      <G rotation="-90" origin={`${CENTER},${CENTER}`}>
+        {data.map((seg, i) => {
+          const finalPct = total > 0 ? seg.value / total : 0;
+          const startPct = cumPct;
+          const endPct   = cumPct + finalPct;
+          let visPct = 0;
+          if      (prog >= endPct)   visPct = finalPct;
+          else if (prog >  startPct) visPct = prog - startPct;
+          cumPct += finalPct;
+          if (visPct <= 0.001) return null;
+          const segLen = Math.max(CIRC * visPct - 2, 0);
+          return (
+            <Circle key={i}
+              cx={CENTER} cy={CENTER} r={R}
+              fill="none" stroke={seg.color}
+              strokeWidth={stroke}
+              strokeDasharray={`${segLen} ${CIRC}`}
+              strokeDashoffset={-(startPct * CIRC)}
+              strokeLinecap="round"
+            />
+          );
+        })}
+      </G>
+    </Svg>
+  );
+}
 
 const W = Dimensions.get('window').width;
 
-const CAT_META = {
-  transport: { icon: '🚗', color: '#4FC3F7', label: 'Transport' },
-  food:      { icon: '🍽️', color: '#81C784', label: 'Food'      },
-  energy:    { icon: '⚡',  color: '#FFD54F', label: 'Energy'    },
-  shopping:  { icon: '🛍️', color: '#CE93D8', label: 'Shopping'  },
+// ── Stunning aerial forest canopy — 8K quality, ultra-sharp green canopy ──────
+const FOREST_IMG = 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1600&q=100&fit=crop&crop=center&auto=format';
+
+// ── Design tokens — Dark Glass Theme ──────────────────────────────────────────
+// C is rebuilt dynamically inside the component via buildC(appTheme)
+
+// Fallback only — actual limit comes from user.dailyThreshold at runtime
+const DEFAULT_LIMIT = 6.8;
+
+const CATS = {
+  transport: { icon: '🚗', label: 'Transport', bg: 'rgba(90,200,250,0.09)',  accent: '#5AC8FA' },
+  food:      { icon: '🍽️', label: 'Diet',      bg: 'rgba(178,208,84,0.09)', accent: '#B2D054' },
+  energy:    { icon: '⚡',  label: 'Energy',    bg: 'rgba(245,158,11,0.09)', accent: '#F59E0B' },
+  shopping:  { icon: '🛍️', label: 'Shopping',  bg: 'rgba(244,63,94,0.09)',  accent: '#F43F5E' },
 };
 
-const scoreColor = (s) => s >= 70 ? '#00E676' : s >= 40 ? '#FFD740' : '#FF5252';
-const scoreLabel = (s) => s >= 70 ? 'Excellent 🌟' : s >= 40 ? 'Average ⚡' : 'Needs Work ⚠️';
-const levelTitle = (l) => ['', 'Seedling', 'Sapling', 'Green Leaf', 'Eco Warrior', 'Climate Hero', 'Earth Guardian'][Math.min(l, 6)] || 'Earth Guardian';
+const TIPS = [
+  {
+    tag: 'Transport', color: '#5AC8FA',
+    text: 'Try cycling for trips under 3 km — this could save 0.8 kg CO₂ daily.',
+    image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=900&q=85&fit=crop',
+  },
+  {
+    tag: 'Diet', color: '#B2D054',
+    text: 'Swapping one beef meal per week for legumes cuts food emissions by ~0.5 kg CO₂.',
+    image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=900&q=85&fit=crop',
+  },
+  {
+    tag: 'Energy', color: '#F59E0B',
+    text: 'Setting AC to 25°C instead of 22°C saves up to 0.3 kg CO₂ per day.',
+    image: 'https://images.unsplash.com/photo-1509391366360-2e959784a276?w=900&q=85&fit=crop',
+  },
+  {
+    tag: 'Shopping', color: '#A855F7',
+    text: 'Buying second-hand instead of new can cut shopping footprint by 60%.',
+    image: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=900&q=85&fit=crop',
+  },
+  {
+    tag: 'Personalized', color: '#F43F5E',
+    text: 'Carpooling 3×/week could reduce transport emissions by 40%.',
+    image: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=900&q=85&fit=crop',
+  },
+];
+
+const QUICK_SPOTS = [
+  { label: 'Parks 🌳',     q: 'park'        },
+  { label: 'Recycling ♻️', q: 'recycling'   },
+  { label: 'Nursery 🌱',   q: 'nursery'     },
+  { label: 'Organic 🥦',   q: 'organic'     },
+  { label: 'EV Charge ⚡', q: 'ev_charging' },
+];
+
+function initials(name = '') {
+  return name.trim().split(' ').map(w => w[0]?.toUpperCase() ?? '').slice(0, 2).join('');
+}
+function timeGreeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
+function pctChange(today, yesterday) {
+  if (!yesterday || yesterday === 0) return null;
+  return Math.round(((today - yesterday) / yesterday) * 100);
+}
+
+function formatActivityDate(rawDate) {
+  if (!rawDate) return '';
+  const d        = new Date(rawDate);
+  const now      = new Date();
+  const todayUTC = now.toISOString().slice(0, 10);
+  const dUTC     = d.toISOString().slice(0, 10);
+  const time     = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const diffDays = Math.round(
+    (new Date(todayUTC) - new Date(dUTC)) / (1000 * 60 * 60 * 24)
+  );
+
+  if (diffDays === 0) return `Today · ${time}`;
+  if (diffDays === 1) return `Yesterday · ${time}`;
+  return `${d.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`;
+}
 
 export default function DashboardScreen({ navigation }) {
-  const { user }                    = useAuth();
+  const { user } = useAuth();
+  const { theme: appTheme } = useAppTheme();
+  // Use the user's own daily threshold — falls back to IPCC 6.8 if not set
+  const DAILY_LIMIT = user?.dailyThreshold ?? DEFAULT_LIMIT;
+  // Rebuild colour tokens + styles whenever the theme changes
+  const C = useMemo(() => buildC(appTheme), [appTheme]);
+  const s = useMemo(() => makeStyles(C), [C]);
   const [summary, setSummary]       = useState(null);
+  const [activities, setActivities] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [spotSearch, setSpotSearch] = useState('');
+  const tipIndex    = useRef(Math.floor(Math.random() * TIPS.length));
+  const [avatarUri, setAvatarUri] = useState(null);
+  const barAnimRef  = useRef(new Animated.Value(0));
+  const [barProg, setBarProg] = useState(0);
+
+  // Restart bar animation whenever data refreshes
+  const startBarAnim = () => {
+    barAnimRef.current.setValue(0);
+    setBarProg(0);
+    const id = barAnimRef.current.addListener(({ value }) => setBarProg(value));
+    Animated.timing(barAnimRef.current, {
+      toValue: 1, duration: 1000,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start(() => barAnimRef.current.removeListener(id));
+  };
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await getActivitySummary();
-      setSummary(res.data);
+      const [sumRes, actRes] = await Promise.all([
+        getActivitySummary(),
+        getActivities({ limit: 30 }),
+      ]);
+      setSummary(sumRes.data);
+      setActivities(actRes.data?.activities ?? actRes.data?.data ?? []);
+      startBarAnim();
     } catch { /* ignore */ }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const loadPhotos = async () => {
+    if (!user?._id) return;
+    const a = await AsyncStorage.getItem(avatarKey(user._id));
+    setAvatarUri(a || null);
+  };
+  useEffect(() => { loadPhotos(); }, [user?._id]);
   useEffect(() => {
-    const unsub = navigation.addListener('focus', fetchData);
+    const unsub = navigation.addListener('focus', () => { fetchData(); if (user?._id) loadPhotos(); });
     return unsub;
   }, [navigation, fetchData]);
 
-  if (loading) return <Loading message="Loading your eco dashboard..." />;
+  const goToSpots = (q = '') => {
+    navigation.navigate('EcoSpots', { initialQuery: q });
+    setSpotSearch('');
+  };
 
-  const stats       = summary?.stats;
-  const today       = summary?.today   ?? { co2e: 0, count: 0 };
-  const weekly      = summary?.weekly  ?? [];
-  const monthly     = summary?.monthly ?? { breakdown: [], total: 0 };
-  const ecoScore    = stats?.ecoScore    ?? 50;
-  const totalPoints = stats?.totalPoints ?? 0;
-  const streak      = stats?.currentStreak ?? 0;
-  const level       = stats?.level ?? 1;
-  const badges      = stats?.badges ?? [];
-  const levelPct    = ((totalPoints % 200) / 200);
+  if (loading) {
+    return (
+      <LinearGradient colors={appTheme.bgGrad} style={s.loader}>
+        <ActivityIndicator size="large" color={C.green600} />
+        <Text style={s.loaderTxt}>Loading your eco dashboard…</Text>
+      </LinearGradient>
+    );
+  }
 
-  const chartLabels = weekly.map(d => d.label);
-  const chartValues = weekly.map(d => parseFloat(d.co2e.toFixed(2)));
-  const hasChart    = chartValues.some(v => v > 0);
+  // ── Data extraction ────────────────────────────────────────────────────────
+  const today     = summary?.today     ?? { co2e: 0, count: 0 };
+  const monthly   = summary?.monthly   ?? { breakdown: [], total: 0 };
+  const yesterday = summary?.yesterday ?? {};
+  const stats     = summary?.stats     ?? {};
+  const todayCO2  = parseFloat((today.co2e ?? 0).toFixed(1));
+  const limitPct  = Math.min((todayCO2 / DAILY_LIMIT) * 100, 100).toFixed(0);
+  const tip       = TIPS[tipIndex.current % TIPS.length];
+  const firstName = user?.name?.split(' ')[0] ?? 'Friend';
+  const underLimit = todayCO2 <= DAILY_LIMIT;
+  const diffKg    = Math.abs(DAILY_LIMIT - todayCO2).toFixed(1);
 
-  const pieData = monthly.breakdown.map(b => {
-    const meta = CAT_META[b._id] ?? { color: '#aaa', label: b._id };
-    return { name: meta.label, co2: parseFloat(b.total.toFixed(1)), color: meta.color, legendFontColor: '#ccc', legendFontSize: 11 };
+  const getCatKg = (cat) => {
+    const found = monthly.breakdown?.find(b => b._id === cat);
+    return parseFloat((found?.total ?? 0).toFixed(1));
+  };
+
+  const statCards = ['transport', 'food', 'energy', 'shopping'].map(cat => {
+    const kg     = getCatKg(cat);
+    const yestKg = parseFloat((yesterday[cat] ?? 0).toFixed(1));
+    return { cat, kg, pct: pctChange(kg, yestKg) };
   });
 
-  const color = scoreColor(ecoScore);
-
   return (
+    <ScreenTransition>
+    <LinearGradient colors={appTheme.bgGrad} style={{ flex: 1 }}>
     <ScrollView
-      style={styles.root}
+      style={s.root}
       showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor="#00E676" colors={['#00E676']} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => { setRefreshing(true); fetchData(); }}
+          tintColor={C.green600}
+          colors={[C.green600]}
+        />
       }
     >
-      {/* ── TOP HEADER ─────────────────────────────────────────────────── */}
-      <LinearGradient colors={['#052e05', '#0f4a0f', '#1a6b1a']} style={styles.header}>
-        {/* Greeting */}
-        <View style={styles.greetRow}>
-          <View>
-            <Text style={styles.greetHi}>Good day, {user?.name?.split(' ')[0]} 👋</Text>
-            <Text style={styles.greetSub}>Track · Reduce · Offset</Text>
-          </View>
-          <View style={styles.streakPill}>
-            <Text style={styles.streakEmoji}>🔥</Text>
-            <Text style={styles.streakNum}>{streak}</Text>
-            <Text style={styles.streakDay}>days</Text>
-          </View>
-        </View>
+      {/* ══════════════════════════════════════════════════════════════════
+          HERO  —  aerial forest photo + circular glass CO₂ widget
+      ══════════════════════════════════════════════════════════════════ */}
+      <ImageBackground source={{ uri: FOREST_IMG }} style={s.hero} resizeMode="cover">
+        {/* Layered gradients for depth */}
+        <LinearGradient
+          colors={['rgba(0,0,0,0.0)', 'rgba(0,20,0,0.25)']}
+          style={StyleSheet.absoluteFill}
+        />
+        <LinearGradient
+          colors={['rgba(10,40,10,0.45)', 'transparent', 'rgba(5,25,5,0.70)']}
+          locations={[0, 0.45, 1]}
+          style={StyleSheet.absoluteFill}
+        />
 
-        {/* Central Eco Score */}
-        <View style={styles.scoreCenter}>
-          <View style={[styles.scoreRingOuter, { borderColor: color + '50' }]}>
-            <View style={[styles.scoreRingInner, { borderColor: color }]}>
-              <Text style={[styles.scoreNum, { color }]}>{ecoScore}</Text>
-              <Text style={styles.scoreCaption}>ECO SCORE</Text>
-            </View>
+        {/* Top bar */}
+        <View style={s.heroTop}>
+          <View style={s.heroLogoWrap}>
+            <Image
+              source={require('../../../assets/carbon-icon.png')}
+              style={s.heroLogoImg}
+              resizeMode="contain"
+            />
+            <Text style={s.heroLogoTxt}>EcoTrack AI</Text>
           </View>
-          <Text style={[styles.scoreStatus, { color }]}>{scoreLabel(ecoScore)}</Text>
-          <Text style={styles.scoreRef}>World avg: 400 kg CO₂/month</Text>
-        </View>
-
-        {/* Level + points */}
-        <View style={styles.levelBox}>
-          <View style={styles.levelTopRow}>
-            <Text style={styles.levelName}>Lv.{level}  {levelTitle(level)}</Text>
-            <View style={styles.ptsPill}>
-              <Text style={styles.ptsLabel}>⭐ {totalPoints} pts</Text>
-            </View>
-          </View>
-          <View style={styles.levelTrack}>
-            <View style={[styles.levelFill, { width: `${levelPct * 100}%` }]} />
-          </View>
-          <Text style={styles.levelHint}>{totalPoints % 200} / 200 pts to level {level + 1}</Text>
-        </View>
-      </LinearGradient>
-
-      {/* ── TODAY HIGHLIGHT ────────────────────────────────────────────── */}
-      <View style={styles.todayWrap}>
-        <LinearGradient colors={['#0e3d0e', '#1a5c1a']} style={styles.todayCard}>
-          <View style={styles.todayLeft}>
-            <Text style={styles.todayLabel}>Today's Emissions</Text>
-            <Text style={styles.todayVal}>{today.co2e.toFixed(2)} <Text style={styles.todayUnit}>kg CO₂</Text></Text>
-            <Text style={styles.todayLogs}>{today.count} activit{today.count !== 1 ? 'ies' : 'y'} logged</Text>
-          </View>
-          <TouchableOpacity style={styles.logBtn} onPress={() => navigation.navigate('LogActivity')}>
-            <Text style={styles.logBtnText}>+ Log</Text>
+          <TouchableOpacity style={s.notifBtn} onPress={() => navigation.navigate('Settings')}>
+            <Text style={s.notifIcon}>⚙️</Text>
           </TouchableOpacity>
-        </LinearGradient>
-      </View>
-
-      {/* ── QUICK ACTIONS HORIZONTAL ───────────────────────────────────── */}
-      <View style={styles.sectionWrap}>
-        <Text style={styles.sectionHead}>⚡ Quick Actions</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
-          {[
-            { label: 'Log Activity', icon: '➕', screen: 'LogActivity', colors: ['#2E7D32','#1B5E20'] },
-            { label: 'Reports',      icon: '📊', screen: 'Reports',     colors: ['#00695C','#004D40'] },
-            { label: 'Eco Coach',    icon: '🤖', screen: 'Chatbot',     colors: ['#1565C0','#0D47A1'] },
-            { label: 'Leaderboard', icon: '🏆', screen: 'Leaderboard', colors: ['#6A1B9A','#4A148C'] },
-            { label: 'Alerts',       icon: '🔔', screen: 'Alerts',      colors: ['#E65100','#BF360C'] },
-            { label: 'Share Score',  icon: '📤', screen: 'Share',       colors: ['#00838F','#006064'] },
-            { label: 'Eco Spots',    icon: '🗺️', screen: 'EcoSpots',   colors: ['#558B2F','#33691E'] },
-            { label: 'Offset',       icon: '🌱', screen: 'Offset',      colors: ['#37474F','#263238'] },
-          ].map((a, i) => (
-            <TouchableOpacity key={i} onPress={() => navigation.navigate(a.screen)} activeOpacity={0.85} style={styles.actionPill}>
-              <LinearGradient colors={a.colors} style={styles.actionPillGrad}>
-                <Text style={styles.actionPillIcon}>{a.icon}</Text>
-                <Text style={styles.actionPillLabel}>{a.label}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* ── STATS CARDS 2×2 ────────────────────────────────────────────── */}
-      <View style={styles.sectionWrap}>
-        <Text style={styles.sectionHead}>📋 Your Stats</Text>
-        <View style={styles.statsGrid}>
-          {[
-            { label: 'Monthly CO₂', value: `${monthly.total.toFixed(0)} kg`, icon: '📅', bg: '#0e3d0e' },
-            { label: 'Badges',      value: badges.length,                     icon: '🏅', bg: '#1a1a3d' },
-            { label: 'Activities',  value: stats?.totalActivities ?? 0,       icon: '📝', bg: '#2d1a00' },
-            { label: 'Streak',      value: `${streak} days`,                  icon: '🔥', bg: '#3d0d0d' },
-          ].map((s, i) => (
-            <View key={i} style={[styles.statCard, { backgroundColor: s.bg }]}>
-              <Text style={styles.statIcon}>{s.icon}</Text>
-              <Text style={styles.statVal}>{s.value}</Text>
-              <Text style={styles.statLbl}>{s.label}</Text>
-            </View>
-          ))}
         </View>
-      </View>
 
-      {/* ── 7-DAY CHART ─────────────────────────────────────────────────── */}
-      <View style={styles.sectionWrap}>
-        <Text style={styles.sectionHead}>📈 7-Day Emission Trend</Text>
-        <View style={styles.chartBox}>
-          {hasChart ? (
-            <LineChart
-              data={{ labels: chartLabels, datasets: [{ data: chartValues, color: () => '#00E676', strokeWidth: 2.5 }] }}
-              width={W - 40}
-              height={195}
-              chartConfig={chartCfg}
-              bezier
-              style={{ borderRadius: 16 }}
-              withInnerLines={false}
-              withDots
-            />
-          ) : (
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyIcon}>📊</Text>
-              <Text style={styles.emptyText}>Log activities to see your emission trend</Text>
-              <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('LogActivity')}>
-                <Text style={styles.emptyBtnText}>+ Log Activity Now</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* ── CATEGORY LIST ───────────────────────────────────────────────── */}
-      <View style={styles.sectionWrap}>
-        <Text style={styles.sectionHead}>📂 Category Breakdown</Text>
-        <View style={styles.catList}>
-          {Object.entries(CAT_META).map(([key, meta]) => {
-            const found = monthly.breakdown.find(b => b._id === key);
-            const kg    = found?.total ?? 0;
-            const pct   = monthly.total > 0 ? (kg / monthly.total) * 100 : 0;
-            return (
-              <TouchableOpacity
-                key={key}
-                style={styles.catRow}
-                onPress={() => navigation.navigate('LogActivity', { category: key })}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.catIconBox, { backgroundColor: meta.color + '22' }]}>
-                  <Text style={styles.catEmoji}>{meta.icon}</Text>
+        {/* Outer glow ring + circular glass CO₂ widget */}
+        <View style={s.circleGlow}>
+          <View style={s.circleRing}>
+            <View style={s.circleWrap}>
+              <BlurView intensity={55} tint="dark" style={StyleSheet.absoluteFill} />
+              <View style={s.circleContent}>
+                <Text style={s.circleLabel}>MY CO₂ TODAY</Text>
+                <Text style={s.circleVal}>{todayCO2}</Text>
+                <Text style={s.circleUnit}>kg CO₂e</Text>
+                <View style={s.circleBar}>
+                  <View style={[s.circleBarFill, { width: `${limitPct}%` }]} />
                 </View>
-                <View style={styles.catInfo}>
-                  <View style={styles.catTopRow}>
-                    <Text style={styles.catName}>{meta.label}</Text>
-                    <Text style={[styles.catKg, { color: meta.color }]}>{kg.toFixed(1)} kg</Text>
-                  </View>
-                  <View style={styles.catTrack}>
-                    <View style={[styles.catFill, { width: `${pct}%`, backgroundColor: meta.color }]} />
-                  </View>
-                  <Text style={styles.catPct}>{pct.toFixed(0)}% of monthly total</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* ── MONTHLY PIE ─────────────────────────────────────────────────── */}
-      {pieData.length > 0 && (
-        <View style={styles.sectionWrap}>
-          <Text style={styles.sectionHead}>🥧 Monthly CO₂ by Category</Text>
-          <View style={styles.chartBox}>
-            <PieChart
-              data={pieData}
-              width={W - 40}
-              height={180}
-              chartConfig={chartCfg}
-              accessor="co2"
-              backgroundColor="transparent"
-              paddingLeft="15"
-            />
+                <Text style={s.circlePct}>{limitPct}% of limit</Text>
+              </View>
+            </View>
           </View>
         </View>
-      )}
 
-      {/* ── ACHIEVEMENTS ────────────────────────────────────────────────── */}
-      <LinearGradient colors={['#0A2E0A', '#163d16']} style={styles.achieveSection}>
-        <Text style={styles.achieveHead}>🏆 Achievements & Badges</Text>
+        {/* Bottom info strip */}
+        <View style={s.heroStrip}>
+          <View style={s.heroStripDot} />
+          <Text style={s.heroStripTxt}>
+            {underLimit ? `✅  ${diffKg} kg under daily limit` : `⚠️  ${diffKg} kg over daily limit`}
+          </Text>
+        </View>
+      </ImageBackground>
 
-        {badges.length === 0 ? (
-          <Text style={styles.achieveEmpty}>Log eco-friendly activities to earn your first badge!</Text>
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgeRow}>
-            {badges.map((b, i) => (
-              <View key={i} style={styles.badgePill}>
-                <Text style={styles.badgeIcon}>{b.icon}</Text>
-                <Text style={styles.badgeName}>{b.name}</Text>
-              </View>
-            ))}
-          </ScrollView>
+      {/* ══════════════════════════════════════════════════════════════════
+          GREETING  —  "Hi, Name!" + goal badge + progress bar
+      ══════════════════════════════════════════════════════════════════ */}
+      <View style={s.greetCard}>
+        <View style={s.greetRow}>
+          {/* Avatar — shows real profile photo if set */}
+          <TouchableOpacity style={s.avatar} onPress={() => navigation.navigate('Profile')} activeOpacity={0.85}>
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={s.avatarImg} resizeMode="cover" />
+            ) : (
+              <Text style={s.avatarTxt}>{initials(user?.name)}</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Text */}
+          <View style={s.greetText}>
+            <Text style={s.hiTxt}>Hi, {firstName}! 👋</Text>
+            <Text style={s.hiSub}>
+              {timeGreeting()} —{' '}
+              {underLimit
+                ? `${diffKg} kg below your daily limit`
+                : `${diffKg} kg above your daily limit`}
+            </Text>
+          </View>
+
+          {/* Goal badge */}
+          <TouchableOpacity style={s.goalBadge} onPress={() => navigation.navigate('Reports')}>
+            <Text style={s.goalBadgeIcon}>🎯</Text>
+            <Text style={s.goalBadgeTxt}>Goal</Text>
+            <Text style={s.goalBadgeVal}>{DAILY_LIMIT} CO₂</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Bio + meta pills */}
+        {(user?.bio || user?.age || user?.gender) && (
+          <View style={s.greetMeta}>
+            {user?.bio ? (
+              <Text style={s.greetBio} numberOfLines={2}>{user.bio}</Text>
+            ) : null}
+            <View style={s.greetPills}>
+              {user?.age    && <View style={s.greetPill}><Text style={s.greetPillTxt}>🎂 {user.age} yrs</Text></View>}
+              {user?.gender && <View style={s.greetPill}><Text style={s.greetPillTxt}>
+                {user.gender === 'male' ? '👨 Male' : user.gender === 'female' ? '👩 Female' : user.gender === 'non-binary' ? '🧑 Non-binary' : '🤐 Private'}
+              </Text></View>}
+            </View>
+          </View>
         )}
 
-        {/* Next goal */}
-        <View style={styles.goalCard}>
-          <Text style={styles.goalTitle}>🎯 Next Goal</Text>
-          {streak < 7
-            ? <Text style={styles.goalText}>🔥 Log activities <Text style={styles.goalHighlight}>{7 - streak} more day{7 - streak !== 1 ? 's' : ''}</Text> to earn the <Text style={styles.goalHighlight}>7-Day Streak</Text> badge!</Text>
-            : streak < 30
-            ? <Text style={styles.goalText}>⚡ Just <Text style={styles.goalHighlight}>{30 - streak} more days</Text> for the <Text style={styles.goalHighlight}>30-Day Streak</Text> badge!</Text>
-            : <Text style={styles.goalText}>🌟 You're a legend! Keep your streak going!</Text>
-          }
+        {/* Progress bar */}
+        <View style={s.progressBg}>
+          <LinearGradient
+            colors={underLimit ? ['#B2D054', '#8FA832'] : ['#EF5350', '#BF360C']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={[s.progressFill, { width: `${limitPct}%` }]}
+          />
         </View>
-      </LinearGradient>
+        <View style={s.progressMeta}>
+          <Text style={s.progressMetaTxt}>0 kg</Text>
+          <Text style={[s.progressMetaTxt, { color: underLimit ? C.green600 : C.coral600, fontWeight: '700' }]}>
+            {limitPct}% of daily limit
+          </Text>
+          <Text style={s.progressMetaTxt}>{DAILY_LIMIT} kg</Text>
+        </View>
+      </View>
 
-      {/* ── FOOTER ──────────────────────────────────────────────────────── */}
-      <View style={styles.footer}>
-        <Text style={styles.footerLine}>🌍 Emissions calculated per IPCC AR6 · GHG Protocol standards</Text>
-        <Text style={styles.footerLine}>Data privacy compliant · GDPR · ISO 14064</Text>
+      {/* ══════════════════════════════════════════════════════════════════
+          STATS PILLS  —  streak · points · badges · level
+      ══════════════════════════════════════════════════════════════════ */}
+      <View style={s.section}>
+        <View style={s.pillRow}>
+          {[
+            { emoji: '🔥', val: stats.currentStreak ?? 0,    lbl: 'Streak', bg: C.amber50, border: C.amber100, color: C.amber600 },
+            { emoji: '⭐', val: stats.totalPoints   ?? 0,    lbl: 'Points', bg: C.teal50,  border: C.teal100,  color: C.teal600  },
+            { emoji: '🏅', val: (stats.badges??[]).length,   lbl: 'Badges', bg: C.coral50, border: C.coral100, color: C.coral600 },
+            { emoji: '🌿', val: `Lv.${stats.level ?? 1}`,   lbl: 'Level',  bg: C.green50, border: C.green100, color: C.green600 },
+          ].map((p, i) => (
+            <View key={i} style={[s.pill, { backgroundColor: p.bg, borderColor: p.border }]}>
+              <Text style={s.pillEmoji}>{p.emoji}</Text>
+              <Text style={[s.pillVal, { color: p.color }]}>{p.val}</Text>
+              <Text style={[s.pillLbl, { color: p.color }]}>{p.lbl}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          WEEKLY CHART  —  Carbon Footprint (kg) bar chart
+      ══════════════════════════════════════════════════════════════════ */}
+      {(() => {
+        const weekly        = summary?.weekly ?? [];
+        const maxCO2        = Math.max(...weekly.map(d => d.co2e), 0.1);
+        const todayStr      = new Date().toISOString().slice(0, 10);
+        const mTotal        = parseFloat((monthly.total ?? 0).toFixed(1));
+        const donutData     = ['transport','food','energy','shopping']
+          .map(cat => {
+            const found = monthly.breakdown?.find(b => b._id === cat);
+            return { cat, value: found?.total ?? 0 };
+          })
+          .filter(d => d.value > 0)
+          .map(d => ({ ...d, color: DONUT_COLORS[d.cat] ?? '#B2D054',
+                       label: CATS[d.cat]?.label ?? d.cat,
+                       pct: mTotal > 0 ? ((d.value / mTotal) * 100).toFixed(0) : 0 }));
+
+        return (
+          <View style={s.section}>
+            <View style={s.rowBetween}>
+              <Text style={s.sectionTitle}>Carbon Footprint (kg)</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Reports')}>
+                <Text style={s.linkTxt}>Full report →</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={s.dualCard}>
+              {/* ── LEFT half: animated bar chart ── */}
+              <View style={s.dualHalf}>
+                <Text style={s.dualLabel}>Weekly · kg CO₂</Text>
+
+                {weekly.length === 0 ? (
+                  <Text style={s.chartEmpty}>No data yet</Text>
+                ) : (
+                  <View style={s.barArea}>
+                    {weekly.map((day, i) => {
+                      const isToday  = day.date === todayStr;
+                      const hPct     = maxCO2 > 0 ? day.co2e / maxCO2 : 0;
+                      const finalH   = Math.max(hPct * 88, day.co2e > 0 ? 3 : 0);
+                      const animH    = finalH * barProg;
+                      const over     = day.co2e > DAILY_LIMIT;
+                      const barColor = over ? C.coral600 : isToday ? C.green600 : C.teal600;
+                      return (
+                        <View key={i} style={s.barCol}>
+                          {isToday && (
+                            <Text style={s.barTopVal}>{parseFloat(day.co2e.toFixed(1))}</Text>
+                          )}
+                          <View style={s.barTrack}>
+                            <View style={[s.barFill, {
+                              height: animH,
+                              backgroundColor: barColor,
+                              opacity: isToday ? 1 : 0.70,
+                            }]} />
+                          </View>
+                          <Text style={[s.barLbl, isToday && { color: C.green600, fontWeight: '800' }]}>
+                            {isToday ? '●' : day.label}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+
+                <View style={s.miniLegend}>
+                  {[{ c: C.green600, l: 'Today' }, { c: C.teal600, l: 'OK' }, { c: C.coral600, l: 'Over' }]
+                    .map((l, i) => (
+                      <View key={i} style={s.miniLegendItem}>
+                        <View style={[s.miniLegendDot, { backgroundColor: l.c }]} />
+                        <Text style={s.miniLegendTxt}>{l.l}</Text>
+                      </View>
+                    ))}
+                </View>
+              </View>
+
+              {/* Divider */}
+              <View style={s.vDivider} />
+
+              {/* ── RIGHT half: animated donut chart ── */}
+              <View style={s.dualHalf}>
+                <Text style={s.dualLabel}>Monthly Split</Text>
+
+                <View style={s.donutWrap}>
+                  {donutData.length > 0 ? (
+                    <DonutChart data={donutData} total={mTotal} size={120} stroke={16} />
+                  ) : (
+                    <View style={s.donutEmpty}>
+                      <Text style={s.donutEmptyTxt}>No data</Text>
+                    </View>
+                  )}
+                  {donutData.length > 0 && (
+                    <View style={s.donutCenter} pointerEvents="none">
+                      <Text style={s.donutCenterVal}>{mTotal.toFixed(0)}</Text>
+                      <Text style={s.donutCenterUnit}>kg</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={s.donutLegend}>
+                  {donutData.map((d, i) => (
+                    <View key={i} style={s.donutLegendItem}>
+                      <View style={[s.donutLegendDot, { backgroundColor: d.color }]} />
+                      <Text style={s.donutLegendTxt}>{d.label}</Text>
+                      <Text style={[s.donutLegendPct, { color: d.color }]}>{d.pct}%</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          FIND ECO SPOTS  —  search bar + quick chips
+      ══════════════════════════════════════════════════════════════════ */}
+      <View style={s.section}>
+        <View style={s.rowBetween}>
+          <Text style={s.sectionTitle}>🗺️ Find Nearby Eco Spots</Text>
+          <TouchableOpacity onPress={() => goToSpots('')}>
+            <Text style={s.linkTxt}>See all →</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={s.searchCard}>
+          <View style={s.searchRow}>
+            <View style={s.searchBox}>
+              <Text style={s.searchIcon}>🔍</Text>
+              <TextInput
+                style={s.searchInput}
+                placeholder="Search parks, recycling, EV…"
+                placeholderTextColor={C.textMuted}
+                value={spotSearch}
+                onChangeText={setSpotSearch}
+                returnKeyType="search"
+                onSubmitEditing={() => goToSpots(spotSearch)}
+              />
+              {spotSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setSpotSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={s.clearX}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity style={s.goBtn} onPress={() => goToSpots(spotSearch)} activeOpacity={0.85}>
+              <Text style={s.goBtnTxt}>Go</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow}>
+            {QUICK_SPOTS.map(c => (
+              <TouchableOpacity key={c.q} style={s.chip} onPress={() => goToSpots(c.q)}>
+                <Text style={s.chipTxt}>{c.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          MONTHLY BREAKDOWN  —  2×2 category grid
+      ══════════════════════════════════════════════════════════════════ */}
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>Monthly Breakdown</Text>
+        <View style={s.statGrid}>
+          {[statCards.slice(0, 2), statCards.slice(2, 4)].map((row, ri) => (
+            <View key={ri} style={s.statRow}>
+              {row.map(({ cat, kg, pct }) => {
+                const m  = CATS[cat];
+                const up = pct !== null && pct > 0;
+                const dn = pct !== null && pct < 0;
+                return (
+                  <View key={cat} style={[s.statCard, { backgroundColor: m.bg, borderColor: C.border }]}>
+                    <View style={[s.statIconBox, { backgroundColor: m.accent + '22' }]}>
+                      <Text style={s.statIcon}>{m.icon}</Text>
+                    </View>
+                    <View style={s.statBody}>
+                      <Text style={[s.statVal, { color: m.accent }]}>
+                        {kg}<Text style={s.statUnit}> kg</Text>
+                      </Text>
+                      <Text style={s.statLbl}>{m.label}</Text>
+                      {pct !== null && (
+                        <Text style={[s.statDelta, { color: up ? C.coral600 : C.teal600 }]}>
+                          {up ? '▲' : dn ? '▼' : '—'} {Math.abs(pct)}%
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          TREE OFFSET CARD
+      ══════════════════════════════════════════════════════════════════ */}
+      {(() => {
+        const mTotal = parseFloat((monthly.total ?? 0).toFixed(1));
+        const trees  = mTotal > 0 ? Math.ceil(mTotal / 20) : 0; // 1 tree ≈ 20 kg CO₂/yr
+        return (
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>🌳 Monthly Offset</Text>
+            <View style={s.offsetCard}>
+              {/* Left info */}
+              <View style={s.offsetLeft}>
+                <Text style={s.offsetTitle}>Your Carbon Footprint{'\n'}for the month is</Text>
+                <View style={s.offsetCo2Ring}>
+                  <Text style={s.offsetCo2Val}>{mTotal}</Text>
+                  <Text style={s.offsetCo2Unit}>kgCO₂e</Text>
+                </View>
+              </View>
+
+              {/* Divider */}
+              <View style={s.offsetDivider} />
+
+              {/* Right — trees */}
+              <View style={s.offsetRight}>
+                <View style={s.offsetTreeRing}>
+                  <Text style={s.offsetTreeVal}>{trees}</Text>
+                </View>
+                <Text style={s.offsetTreeLabel}>
+                  trees required to{'\n'}offset your emissions
+                </Text>
+                <Text style={s.offsetNote}>≈ 20 kg CO₂/tree/yr</Text>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          TIP OF THE DAY
+      ══════════════════════════════════════════════════════════════════ */}
+      <View style={s.section}>
+        <Text style={s.sectionTitle}>Tip of the Day 💡</Text>
+        <ImageBackground
+          source={{ uri: tip.image }}
+          style={s.tipCard}
+          imageStyle={s.tipCardImg}
+          resizeMode="cover"
+        >
+          <LinearGradient
+            colors={['rgba(6,12,24,0.10)', 'rgba(6,12,24,0.55)', 'rgba(6,12,24,0.93)']}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* Category tag — top left */}
+          <View style={[s.tipTag, { backgroundColor: tip.color + 'DD' }]}>
+            <Text style={s.tipTagTxt}>{tip.tag}</Text>
+          </View>
+          {/* Text — bottom */}
+          <View style={s.tipBottom}>
+            <Text style={s.tipTxt}>{tip.text}</Text>
+          </View>
+        </ImageBackground>
+      </View>
+
+      {/* ── Log Activity button ──────────────────────────────────────────── */}
+      <View style={{ marginHorizontal: 16, marginTop: 18 }}>
+        <TouchableOpacity
+          style={s.logBtn}
+          onPress={() => navigation.navigate('LogActivity')}
+          activeOpacity={0.85}
+        >
+          <Text style={s.logBtnTxt}>➕  Log New Activity</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          MY ACTIVITIES
+      ══════════════════════════════════════════════════════════════════ */}
+      <View style={s.section}>
+        <View style={s.rowBetween}>
+          <Text style={s.sectionTitle}>My Activities</Text>
+          <Text style={s.countBadge}>{activities.length} logged</Text>
+        </View>
+
+        {activities.length === 0 ? (
+          <View style={s.emptyBox}>
+            <Image source={require('../../../assets/carbon-icon.png')} style={{ width: 52, height: 52 }} resizeMode="contain" />
+            <Text style={s.emptyTxt}>No activities logged yet.</Text>
+          </View>
+        ) : (
+          activities.map((act, i) => {
+            const cat      = act.category ?? 'transport';
+            const meta     = CATS[cat] ?? CATS.transport;
+            const kg       = parseFloat((act.co2e ?? act.carbonFootprint ?? 0).toFixed(1));
+            const dateLabel = formatActivityDate(act.date ?? act.createdAt);
+            const isToday  = (act.date ?? act.createdAt)
+              ? new Date(act.date ?? act.createdAt).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
+              : false;
+            return (
+              <View key={act._id ?? i} style={s.actItem}>
+                <View style={[s.actIconBox, { backgroundColor: meta.bg }]}>
+                  <Text style={{ fontSize: 18 }}>{meta.icon}</Text>
+                </View>
+                <View style={s.actInfo}>
+                  <Text style={s.actName} numberOfLines={1}>
+                    {act.label ?? act.subType ?? act.description ?? meta.label}
+                  </Text>
+                  <Text style={[s.actMeta, isToday && { color: C.green600, fontWeight: '600' }]}>
+                    {dateLabel}{act.distance ? ` · ${act.distance} km` : ''}
+                  </Text>
+                </View>
+                <View style={s.actRight}>
+                  <Text style={[s.actKg, { color: meta.accent }]}>{kg}</Text>
+                  <Text style={s.actKgUnit}>kg CO₂</Text>
+                </View>
+              </View>
+            );
+          })
+        )}
+
       </View>
 
       <View style={{ height: 32 }} />
     </ScrollView>
+    </LinearGradient>
+    </ScreenTransition>
   );
 }
 
-const chartCfg = {
-  backgroundColor: 'transparent',
-  backgroundGradientFrom: '#0d2b0d',
-  backgroundGradientTo: '#1a3d1a',
-  decimalPlaces: 1,
-  color: (o = 1) => `rgba(0,230,118,${o})`,
-  labelColor: () => 'rgba(255,255,255,0.6)',
-  propsForDots: { r: '4', strokeWidth: '2', stroke: '#00E676' },
-  propsForBackgroundLines: { strokeDasharray: '', stroke: 'rgba(255,255,255,0.05)' },
-};
+// ── Styles (factory — called via useMemo so colours update with theme) ────────
+function makeStyles(C) { return StyleSheet.create({
+  root:       { flex: 1, backgroundColor: 'transparent' },
+  loader:     { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14 },
+  loaderTxt: { fontSize: 14, color: C.textSub },
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#071407' },
+  // ─── Hero ─────────────────────────────────────────────────────────────────
+  hero: {
+    width: '100%',
+    height: Platform.OS === 'ios' ? 430 : 400,
+    justifyContent: 'space-between',
+    paddingBottom: 0,
+  },
+  heroTop: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 58 : 40,
+    paddingHorizontal: 22,
+  },
+  heroLogoWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  heroLogoImg:  { width: 28, height: 28, borderRadius: 6 },
+  heroLogoTxt:  {
+    fontSize: 18, fontWeight: '900', color: '#fff',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  notifBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  notifIcon: { fontSize: 18 },
 
-  // ── Header ──────────────────────────────────────────────────────────────────
-  header:       { paddingTop: 54, paddingBottom: 24, paddingHorizontal: 20 },
-  greetRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  greetHi:      { fontSize: 20, fontWeight: '800', color: '#fff' },
-  greetSub:     { fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 2 },
-  streakPill:   { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,215,64,0.15)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: 'rgba(255,215,64,0.35)' },
-  streakEmoji:  { fontSize: 16 },
-  streakNum:    { fontSize: 18, fontWeight: '900', color: '#FFD740' },
-  streakDay:    { fontSize: 11, color: '#FFD740', fontWeight: '600' },
+  // Outer glow → ring → glass circle
+  circleGlow: {
+    alignSelf: 'center',
+    padding: 12,
+    borderRadius: 106,
+    backgroundColor: 'rgba(127,255,212,0.07)',
+  },
+  circleRing: {
+    padding: 6,
+    borderRadius: 94,
+    borderWidth: 1.5,
+    borderColor: 'rgba(127,255,212,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.08)',
+  },
+  circleWrap: {
+    width: 172, height: 172, borderRadius: 86,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.32)',
+    elevation: 14,
+    shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 20,
+  },
+  circleContent: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(6,12,24,0.55)',
+    paddingHorizontal: 16,
+  },
+  circleLabel: {
+    fontSize: 9, color: 'rgba(255,255,255,0.65)',
+    letterSpacing: 2, fontWeight: '800', marginBottom: 6,
+  },
+  circleVal:  {
+    fontSize: 48, fontWeight: '900', color: C.mint,
+    lineHeight: 52,
+    textShadowColor: 'rgba(0,229,170,0.70)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 16,
+  },
+  circleUnit: { fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 2, marginBottom: 10 },
+  circleBar:  {
+    width: 100, height: 4, borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden',
+    marginBottom: 5,
+  },
+  circleBarFill: { height: 4, backgroundColor: C.mint, borderRadius: 4 },
+  circlePct:  { fontSize: 9, color: 'rgba(255,255,255,0.6)', fontWeight: '700', letterSpacing: 0.5 },
 
-  // Score ring centered
-  scoreCenter:  { alignItems: 'center', marginBottom: 22 },
-  scoreRingOuter:{ width: 128, height: 128, borderRadius: 64, borderWidth: 5, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  scoreRingInner:{ width: 104, height: 104, borderRadius: 52, borderWidth: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.06)' },
-  scoreNum:     { fontSize: 32, fontWeight: '900' },
-  scoreCaption: { fontSize: 9, color: 'rgba(255,255,255,0.6)', fontWeight: '700', letterSpacing: 1.2 },
-  scoreStatus:  { fontSize: 16, fontWeight: '800', marginBottom: 4 },
-  scoreRef:     { fontSize: 11, color: 'rgba(255,255,255,0.4)' },
+  // Bottom info strip
+  heroStrip: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 14, paddingHorizontal: 20,
+    backgroundColor: 'rgba(0,0,0,0.38)',
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.10)',
+  },
+  heroStripDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.mint },
+  heroStripTxt: { fontSize: 12, color: 'rgba(255,255,255,0.85)', fontWeight: '600', letterSpacing: 0.3 },
 
-  // Level bar
-  levelBox:     { backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 14, padding: 14 },
-  levelTopRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  levelName:    { fontSize: 13, fontWeight: '700', color: '#fff' },
-  ptsPill:      { backgroundColor: 'rgba(255,215,64,0.18)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: 'rgba(255,215,64,0.35)' },
-  ptsLabel:     { fontSize: 11, color: '#FFD740', fontWeight: '700' },
-  levelTrack:   { height: 7, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 4, overflow: 'hidden', marginBottom: 5 },
-  levelFill:    { height: 7, backgroundColor: '#00E676', borderRadius: 4 },
-  levelHint:    { fontSize: 10, color: 'rgba(255,255,255,0.45)' },
+  // ─── Greeting card ────────────────────────────────────────────────────────
+  greetCard: {
+    marginHorizontal: 16, marginTop: 18,
+    backgroundColor: C.card, borderRadius: 22,
+    padding: 18, borderWidth: 1, borderColor: C.border,
+    ...C.cardShadow,
+  },
+  greetRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  avatar:    {
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: C.green600,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    overflow: 'hidden',
+    borderWidth: 2, borderColor: C.green100,
+  },
+  avatarImg: { width: 46, height: 46, borderRadius: 23 },
+  avatarTxt: { fontSize: 16, fontWeight: '800', color: '#1A2318' },
+  greetText: { flex: 1 },
+  hiTxt:     { fontSize: 19, fontWeight: '800', color: C.text },
+  hiSub:     { fontSize: 12, color: C.textSub, marginTop: 3 },
+  greetMeta: { marginBottom: 14 },
+  greetBio:  { fontSize: 13, color: C.textSub, lineHeight: 18, marginBottom: 8, fontStyle: 'italic' },
+  greetPills:{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  greetPill: { backgroundColor: C.green50, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
+               borderWidth: 1, borderColor: C.green100 },
+  greetPillTxt: { fontSize: 11, fontWeight: '700', color: C.green600 },
+  goalBadge: {
+    backgroundColor: C.green50, borderRadius: 14,
+    paddingHorizontal: 11, paddingVertical: 9,
+    alignItems: 'center',
+    borderWidth: 1.5, borderColor: C.green100,
+    flexShrink: 0,
+  },
+  goalBadgeIcon: { fontSize: 13, marginBottom: 2 },
+  goalBadgeTxt:  { fontSize: 9,  color: C.green600, fontWeight: '600' },
+  goalBadgeVal:  { fontSize: 11, color: C.green700, fontWeight: '800' },
+  progressBg:   {
+    height: 9, backgroundColor: C.border, borderRadius: 9,
+    overflow: 'hidden', marginBottom: 7,
+  },
+  progressFill: { height: 9, borderRadius: 9 },
+  progressMeta: { flexDirection: 'row', justifyContent: 'space-between' },
+  progressMetaTxt: { fontSize: 10, color: C.textMuted },
 
-  // Today card
-  todayWrap:    { paddingHorizontal: 16, marginTop: 16 },
-  todayCard:    { borderRadius: 18, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,230,118,0.2)' },
-  todayLeft:    { flex: 1 },
-  todayLabel:   { fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: '600', marginBottom: 4 },
-  todayVal:     { fontSize: 30, fontWeight: '900', color: '#00E676' },
-  todayUnit:    { fontSize: 16, fontWeight: '600', color: 'rgba(255,255,255,0.6)' },
-  todayLogs:    { fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4 },
-  logBtn:       { backgroundColor: '#00E676', borderRadius: 22, paddingHorizontal: 20, paddingVertical: 12 },
-  logBtnText:   { color: '#052e05', fontWeight: '900', fontSize: 14 },
+  // ─── Shared section layout ────────────────────────────────────────────────
+  section:    { marginHorizontal: 16, marginTop: 22 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle:{ fontSize: 15, fontWeight: '800', color: C.text },
+  linkTxt:    { fontSize: 12, color: C.green600, fontWeight: '600' },
+  countBadge: { fontSize: 12, color: C.textSub, fontWeight: '600' },
 
-  // Section wrapper
-  sectionWrap:  { paddingHorizontal: 16, marginTop: 20 },
-  sectionHead:  { fontSize: 15, fontWeight: '800', color: '#E8F5E9', marginBottom: 12 },
+  // ─── Pills ────────────────────────────────────────────────────────────────
+  pillRow:   { flexDirection: 'row', gap: 8 },
+  pill:      { flex: 1, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 4,
+               alignItems: 'center', borderWidth: 1 },
+  pillEmoji: { fontSize: 17, marginBottom: 5 },
+  pillVal:   { fontSize: 16, fontWeight: '900' },
+  pillLbl:   { fontSize: 9,  fontWeight: '600', marginTop: 2 },
 
-  // Horizontal scroll actions
-  hScroll:      { gap: 10, paddingBottom: 4 },
-  actionPill:   { borderRadius: 14, overflow: 'hidden' },
-  actionPillGrad:{ paddingHorizontal: 16, paddingVertical: 14, alignItems: 'center', minWidth: 90 },
-  actionPillIcon:{ fontSize: 24, marginBottom: 6 },
-  actionPillLabel:{ fontSize: 11, fontWeight: '700', color: '#fff', textAlign: 'center' },
+  // ─── Dual chart card (equal halves) ──────────────────────────────────────
+  dualCard: {
+    backgroundColor: C.card, borderRadius: 22,
+    borderWidth: 1, borderColor: C.border,
+    padding: 14, flexDirection: 'row', alignItems: 'flex-start',
+    ...C.cardShadow,
+  },
+  dualHalf:  { flex: 1 },                          // ← equal 50 / 50 width
+  dualLabel: { fontSize: 10, fontWeight: '700', color: C.textSub,
+               marginBottom: 8, letterSpacing: 0.4 },
+  vDivider:  { width: 1, backgroundColor: C.border,
+               alignSelf: 'stretch', marginHorizontal: 6 },
 
-  // Stats 2x2 grid
-  statsGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  statCard:     { width: '47.5%', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  statIcon:     { fontSize: 26, marginBottom: 8 },
-  statVal:      { fontSize: 20, fontWeight: '900', color: '#fff', marginBottom: 2 },
-  statLbl:      { fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '600' },
+  // Bar chart (left half)
+  barArea:    { flexDirection: 'row', alignItems: 'flex-end', height: 108, gap: 2 },
+  barCol:     { flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: 108 },
+  barTopVal:  { fontSize: 7, color: C.green600, fontWeight: '700', marginBottom: 2 },
+  barTrack:   { width: '76%', height: 90, justifyContent: 'flex-end' },
+  barFill:    { width: '100%', borderRadius: 5 },
+  barLbl:     { fontSize: 8, color: C.textMuted, marginTop: 4, fontWeight: '500' },
+  chartEmpty: { fontSize: 12, color: C.textMuted, textAlign: 'center', paddingVertical: 24 },
+  miniLegend: { flexDirection: 'row', gap: 7, marginTop: 10, flexWrap: 'wrap' },
+  miniLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  miniLegendDot:  { width: 7, height: 7, borderRadius: 4 },
+  miniLegendTxt:  { fontSize: 9, color: C.textSub },
 
-  // Chart box
-  chartBox:     { backgroundColor: '#0d2b0d', borderRadius: 18, padding: 12, borderWidth: 1, borderColor: 'rgba(0,230,118,0.12)', overflow: 'hidden' },
-  emptyBox:     { alignItems: 'center', paddingVertical: 36 },
-  emptyIcon:    { fontSize: 48, marginBottom: 12 },
-  emptyText:    { color: 'rgba(255,255,255,0.45)', fontSize: 13, textAlign: 'center' },
-  emptyBtn:     { marginTop: 16, backgroundColor: '#00E676', borderRadius: 22, paddingHorizontal: 26, paddingVertical: 11 },
-  emptyBtnText: { color: '#052e05', fontWeight: '900', fontSize: 14 },
+  // Donut chart (right half)
+  donutWrap:       { alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  donutCenter:     { position: 'absolute', alignItems: 'center', justifyContent: 'center',
+                     width: 56, height: 56 },
+  donutCenterVal:  { fontSize: 16, fontWeight: '900', color: C.green800 },
+  donutCenterUnit: { fontSize: 9, color: C.textMuted, fontWeight: '600' },
+  donutEmpty:      { width: 120, height: 120, borderRadius: 60,
+                     borderWidth: 16, borderColor: C.border,
+                     alignItems: 'center', justifyContent: 'center' },
+  donutEmptyTxt:   { fontSize: 10, color: C.textMuted },
+  donutLegend:     { marginTop: 8, gap: 4 },
+  donutLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  donutLegendDot:  { width: 7, height: 7, borderRadius: 4, flexShrink: 0 },
+  donutLegendTxt:  { fontSize: 9, color: C.textSub, flex: 1 },
+  donutLegendPct:  { fontSize: 9, fontWeight: '800' },
 
-  // Category list
-  catList:      { gap: 10 },
-  catRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0e1e0e', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', gap: 14 },
-  catIconBox:   { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  catEmoji:     { fontSize: 24 },
-  catInfo:      { flex: 1 },
-  catTopRow:    { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  catName:      { fontSize: 14, fontWeight: '700', color: '#fff' },
-  catKg:        { fontSize: 14, fontWeight: '800' },
-  catTrack:     { height: 5, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 },
-  catFill:      { height: 5, borderRadius: 3 },
-  catPct:       { fontSize: 10, color: 'rgba(255,255,255,0.4)' },
+  // ─── Eco Spots search ─────────────────────────────────────────────────────
+  searchCard:  {
+    backgroundColor: C.card, borderRadius: 22, padding: 16,
+    borderWidth: 1, borderColor: C.border, ...C.cardShadow,
+  },
+  searchRow:   { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  searchBox:   {
+    flex: 1, flexDirection: 'row', alignItems: 'center', height: 46,
+    backgroundColor: C.inputBg, borderRadius: 14,
+    paddingHorizontal: 12, borderWidth: 1, borderColor: C.border,
+  },
+  searchIcon:  { fontSize: 15, marginRight: 7 },
+  searchInput: { flex: 1, fontSize: 13, color: C.text },
+  clearX:      { fontSize: 12, color: C.textMuted, fontWeight: '700', paddingLeft: 6 },
+  goBtn:       { backgroundColor: C.green700, borderRadius: 14, paddingHorizontal: 18, justifyContent: 'center' },
+  goBtnTxt:    { color: C.mint, fontWeight: '800', fontSize: 14 },
+  chipRow:     { gap: 8, paddingBottom: 2 },
+  chip:        { backgroundColor: C.green50, borderRadius: 20, paddingHorizontal: 13, paddingVertical: 8,
+                 borderWidth: 1, borderColor: C.green100 },
+  chipTxt:     { fontSize: 12, color: C.green700, fontWeight: '700' },
 
-  // Achievements
-  achieveSection:{ marginTop: 20, padding: 20 },
-  achieveHead:  { fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 14 },
-  achieveEmpty: { color: 'rgba(255,255,255,0.45)', fontSize: 13 },
-  badgeRow:     { gap: 8, paddingBottom: 14 },
-  badgePill:    { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
-  badgeIcon:    { fontSize: 17 },
-  badgeName:    { fontSize: 12, color: '#fff', fontWeight: '700' },
-  goalCard:     { marginTop: 4, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: 'rgba(255,215,64,0.2)' },
-  goalTitle:    { fontSize: 12, fontWeight: '800', color: '#FFD740', marginBottom: 6 },
-  goalText:     { fontSize: 13, color: 'rgba(255,255,255,0.75)', lineHeight: 19 },
-  goalHighlight:{ color: '#FFD740', fontWeight: '800' },
+  // ─── Monthly breakdown grid — compact 2×2 chips ───────────────────────────
+  statGrid:   { gap: 8 },
+  statRow:    { flexDirection: 'row', gap: 8 },
+  statCard:   {
+    flex: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderRadius: 16, padding: 12,
+    borderWidth: 1, ...C.cardShadow,
+  },
+  statIconBox: {
+    width: 38, height: 38, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  statIcon:  { fontSize: 18 },
+  statBody:  { flex: 1 },
+  statVal:   { fontSize: 19, fontWeight: '900', lineHeight: 22 },
+  statUnit:  { fontSize: 11, fontWeight: '500' },
+  statLbl:   { fontSize: 10, color: C.textSub, fontWeight: '500', marginTop: 1 },
+  statDelta: { fontSize: 9,  fontWeight: '700', marginTop: 3 },
 
-  // Footer
-  footer:       { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, marginTop: 8 },
-  footerLine:   { fontSize: 10, color: 'rgba(255,255,255,0.25)', textAlign: 'center', marginBottom: 3 },
-});
+  // ─── Tree offset card ────────────────────────────────────────────────────
+  offsetCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.card, borderRadius: 20,
+    borderWidth: 1, borderColor: C.border,
+    padding: 20, gap: 16, ...C.cardShadow,
+  },
+  offsetLeft:  { flex: 1, alignItems: 'center', gap: 12 },
+  offsetRight: { flex: 1, alignItems: 'center', gap: 8 },
+  offsetDivider: { width: 1, height: 100, backgroundColor: C.divider },
+  offsetTitle: {
+    fontSize: 13, color: C.textSub, fontWeight: '600',
+    textAlign: 'center', lineHeight: 19,
+  },
+  offsetCo2Ring: {
+    width: 90, height: 90, borderRadius: 45,
+    borderWidth: 5, borderColor: '#B2D054',
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(178,208,84,0.08)',
+  },
+  offsetCo2Val:  { fontSize: 22, fontWeight: '900', color: C.text, lineHeight: 26 },
+  offsetCo2Unit: { fontSize: 9, fontWeight: '700', color: C.textMuted, marginTop: 1 },
+
+  offsetTreeRing: {
+    width: 80, height: 80, borderRadius: 40,
+    borderWidth: 5, borderColor: '#B2D054',
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(178,208,84,0.08)',
+  },
+  offsetTreeVal:   { fontSize: 26, fontWeight: '900', color: C.text },
+  offsetTreeLabel: {
+    fontSize: 12, color: C.textSub, fontWeight: '600',
+    textAlign: 'center', lineHeight: 18,
+  },
+  offsetNote: { fontSize: 10, color: C.textMuted, fontWeight: '500' },
+
+  // ─── Tip card — full photo ────────────────────────────────────────────────
+  tipCard:   {
+    height: 195, borderRadius: 22, overflow: 'hidden',
+    justifyContent: 'space-between', padding: 16,
+    borderWidth: 1, borderColor: C.border,
+  },
+  tipCardImg:{ borderRadius: 22 },
+  tipTag:    {
+    alignSelf: 'flex-start', borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 5,
+  },
+  tipTagTxt: { fontSize: 11, fontWeight: '800', color: '#FFFFFF' },
+  tipBottom: { gap: 0 },
+  tipTxt:    {
+    fontSize: 14, color: '#FFFFFF', lineHeight: 21, fontWeight: '500',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6,
+  },
+
+  // ─── Activities ──────────────────────────────────────────────────────────
+  emptyBox:  { alignItems: 'center', paddingVertical: 28, gap: 10 },
+  emptyTxt:  { fontSize: 13, color: C.textSub },
+  actItem:   {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: C.card, borderRadius: 18, padding: 14, marginBottom: 8,
+    borderWidth: 1, borderColor: C.border, ...C.cardShadow,
+  },
+  actIconBox: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  actInfo:    { flex: 1 },
+  actName:    { fontSize: 13, fontWeight: '600', color: C.text },
+  actMeta:    { fontSize: 11, color: C.textSub, marginTop: 2 },
+  actRight:   { alignItems: 'flex-end' },
+  actKg:      { fontSize: 16, fontWeight: '900' },
+  actKgUnit:  { fontSize: 10, color: C.textMuted },
+  logBtn:     {
+    marginTop: 14, backgroundColor: C.green700, borderRadius: 16,
+    paddingVertical: 15, alignItems: 'center',
+  },
+  logBtnTxt:  { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
+
+  // ─── Quick actions ────────────────────────────────────────────────────────
+  qaRow:   { gap: 10, paddingBottom: 4 },
+  qaCard:  { borderRadius: 20, padding: 18, alignItems: 'center', minWidth: 86, borderWidth: 1,
+             shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
+  qaIcon:  { fontSize: 24, marginBottom: 8 },
+  qaLabel: { fontSize: 11, fontWeight: '700', color: C.text },
+}); } // end makeStyles

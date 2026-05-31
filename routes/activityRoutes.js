@@ -9,11 +9,13 @@ const {
     getLeaderboard,
     getEmissionFactors,
     getAISuggestions,
+    analyzeScenario,
 } = require('../controllers/activityController');
 
 router.use(protect);
 
-router.get('/emission-factors', getEmissionFactors);
+router.get('/emission-factors',   getEmissionFactors);
+router.post('/analyze-scenario',  analyzeScenario);
 router.get('/leaderboard',      getLeaderboard);
 router.get('/summary',          getSummary);
 router.get('/suggestions',      getAISuggestions);

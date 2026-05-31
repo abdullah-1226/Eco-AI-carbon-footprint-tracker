@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body,#map { width:100%; height:100%; background:#e8f4e8; }
+  .user-dot { width:18px; height:18px; border-radius:50%; background:#1565C0;
+              border:3px solid #fff; box-shadow:0 0 0 4px rgba(21,101,192,0.3); }
+  .leaflet-popup-content { font-size:13px; min-width:180px; }
+  .popup-title  { font-weight:700; color:#1a1a1a; margin-bottom:4px; font-size:14px; }
+  .popup-dist   { color:#555; font-size:12px; margin-bottom:6px; }
+  .popup-addr   { color:#777; font-size:11px; margin-bottom:8px; }
+  .popup-btn    { display:block; background:#0A1A0F; color:#fff; padding:7px 12px;
+                  border-radius:8px; text-align:center; font-weight:700; font-size:12px;
+                  text-decoration:none; cursor:pointer; border:none; width:100%; }
+  .leaflet-control-zoom { border:none !important; box-shadow:0 2px 8px rgba(0,0,0,0.15) !important; }
+  .leaflet-control-zoom a { border-radius:8px !important; margin:2px; }
+</style>
+</head><body>
+<div id="map"></div>
+<script>
+  function sendUp(data) {
+    if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(data); }
+    else { window.parent.postMessage(data, '*'); }
+  }
+
+  var map = L.map('map', { zoomControl: true, attributionControl: false });
+  map.setView([30.3753, 69.3451], 6);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19, crossOrigin: true,
+  }).addTo(map);
+
+  var userMarker   = null;
+  var spotMarkers  = [];
+  var locationSet  = false;
+  var blockReport  = false;
+  var blockTimer   = null;
+
+  function blockMoveReport(ms) {
+    blockReport = true;
+    clearTimeout(blockTimer);
+    blockTimer = setTimeout(function() { blockReport = false; }, ms);
+  }
+
+  function userIcon() {
+    return L.divIcon({ className:'', html:'<div class="user-dot"></div>', iconSize:[18,18], iconAnchor:[9,9] });
+  }
+
+  function setUserLocation(lat, lng) {
+    blockMoveReport(2500);
+    if (userMarker) map.removeLayer(userMarker);
+    userMarker = L.marker([lat,lng], { icon: userIcon(), zIndexOffset: 1000 })
+      .bindPopup('<b>&#x1F4CD; Your Location</b>')
+      .addTo(map);
+    if (!locationSet) {
+      map.flyTo([lat, lng], 14, { duration: 1.0, easeLinearity: 0.5 });
+      locationSet = true;
+    } else {
+      map.flyTo([lat, lng], 14, { duration: 0.8 });
+    }
+  }
+
+  function setPlaces(places) {
+    spotMarkers.forEach(function(m) { map.removeLayer(m); });
+    spotMarkers = [];
+    places.forEach(function(p) {
+      var color = p.markerColor || 'green';
+      var icon = L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-' + color + '.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+      });
+      var m = L.marker([p.lat, p.lng], { icon: icon });
+      var safeName = (p.name || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      var popup = '<div class="popup-title">' + (p.icon||'') + ' ' + safeName + '</div>'
+        + '<div class="popup-dist">&#x1F4CF; ' + p.distance + ' km away</div>'
+        + (p.address ? '<div class="popup-addr">&#x1F4CD; ' + p.address + '</div>' : '')
+        + '<button class="popup-btn" onclick="sendUp(JSON.stringify({action:\'directions\',lat:' + p.lat + ',lng:' + p.lng + ',name:\'' + safeName + '\'}))">&#x1F5FA;&#xFE0F; Get Directions</button>';
+      m.bindPopup(popup);
+      m.on('click', function() { sendUp(JSON.stringify({ action:'select', id: p.id })); });
+      m.addTo(map);
+      spotMarkers.push(m);
+    });
+  }
+
+  function flyTo(lat, lng) {
+    blockMoveReport(2000);
+    map.flyTo([lat, lng], 16, { duration: 0.8 });
+  }
+
+  var moveTimer = null;
+  map.on('moveend', function() {
+    if (blockReport) return;
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(function() {
+      var c = map.getCenter();
+      sendUp(JSON.stringify({ action: 'mapMoved', lat: c.lat, lng: c.lng }));
+    }, 700);
+  });
+
+  setTimeout(function() { map.invalidateSize(); }, 300);
+
+  function handleMsg(e) {
+    try {
+      var msg = JSON.parse(typeof e.data === 'string' ? e.data : JSON.stringify(e.data));
+      if (msg.type === 'init')   setUserLocation(msg.lat, msg.lng);
+      if (msg.type === 'places') setPlaces(msg.places);
+      if (msg.type === 'flyTo')  flyTo(msg.lat, msg.lng);
+    } catch(err) {}
+  }
+
+  document.addEventListener('message', handleMsg);
+  window.addEventListener('message', handleMsg);
+</script>
+</body></html>

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, ActivityIndicator, Modal,
+  ActivityIndicator, Modal,
 } from 'react-native';
+import { showAlert } from '../../utils/crossAlert';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getOffsetPrograms, contributeOffset, getOffsetBalance, getOffsetHistory } from '../../api/api';
+import BackButton from '../../components/BackButton';
+import ScreenTransition from '../../components/ScreenTransition';
 
 export default function OffsetScreen() {
   const [programs, setPrograms]   = useState([]);
@@ -29,7 +32,7 @@ export default function OffsetScreen() {
       setBalance(bRes.data);
       setHistory(hRes.data.data || []);
     } catch {
-      Alert.alert('Error', 'Failed to load offset data');
+      showAlert('Error', 'Failed to load offset data');
     } finally {
       setLoading(false);
     }
@@ -40,12 +43,12 @@ export default function OffsetScreen() {
     setContributing(true);
     try {
       const res = await contributeOffset({ programId: modal.id, quantity: qty });
-      Alert.alert('🌱 Success!', res.data.message);
+      showAlert('🌱 Success!', res.data.message);
       setModal(null);
       setQty(1);
       fetchAll();
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to contribute');
+      showAlert('Error', e.response?.data?.error || 'Failed to contribute');
     } finally {
       setContributing(false);
     }
@@ -54,7 +57,7 @@ export default function OffsetScreen() {
   if (loading) {
     return (
       <View style={styles.centerBox}>
-        <ActivityIndicator size="large" color="#2E7D32" />
+        <ActivityIndicator size="large" color="#B2D054" />
         <Text style={styles.loadingText}>Loading offset programs...</Text>
       </View>
     );
@@ -64,9 +67,12 @@ export default function OffsetScreen() {
   const netBalance  = balance?.netBalance ?? 0;
 
   return (
+    <ScreenTransition>
+    <View style={{ flex: 1 }}>
+    <BackButton />
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Header */}
-      <LinearGradient colors={['#1B5E20', '#2E7D32', '#43A047']} style={styles.header}>
+      <LinearGradient colors={['#0A1A0F', '#0C1B12', '#0E2016']} style={styles.header}>
         <Text style={styles.headerTitle}>🌍 Carbon Offset</Text>
         <Text style={styles.headerSub}>Neutralize your carbon footprint</Text>
       </LinearGradient>
@@ -75,7 +81,7 @@ export default function OffsetScreen() {
       {balance && (
         <View style={styles.balanceCard}>
           <LinearGradient
-            colors={netPositive ? ['#1B5E20', '#2E7D32'] : ['#B71C1C', '#C62828']}
+            colors={netPositive ? ['#0A1A0F', '#0C1B12'] : ['#B71C1C', '#C62828']}
             style={styles.balanceGrad}
           >
             <Text style={styles.balanceTitle}>
@@ -118,8 +124,8 @@ export default function OffsetScreen() {
                   ${p.pricePerUnit} / {p.unit}
                 </Text>
               </View>
-              <View style={[styles.metaBadge, { backgroundColor: '#E8F5E9' }]}>
-                <Text style={[styles.metaText, { color: '#2E7D32' }]}>
+              <View style={[styles.metaBadge, { backgroundColor: 'rgba(178,208,84,0.12)' }]}>
+                <Text style={[styles.metaText, { color: '#8FA832' }]}>
                   {p.co2PerUnit} kg CO₂/{p.unit}
                 </Text>
               </View>
@@ -173,7 +179,7 @@ export default function OffsetScreen() {
                 <Text style={styles.modalStatLabel}>Cost (sim.)</Text>
               </View>
               <View style={styles.modalStat}>
-                <Text style={[styles.modalStatVal, { color: '#2E7D32' }]}>{(modal?.co2PerUnit || 0) * qty} kg</Text>
+                <Text style={[styles.modalStatVal, { color: '#8FA832' }]}>{(modal?.co2PerUnit || 0) * qty} kg</Text>
                 <Text style={styles.modalStatLabel}>CO₂ Offset</Text>
               </View>
             </View>
@@ -212,6 +218,8 @@ export default function OffsetScreen() {
         </View>
       </Modal>
     </ScrollView>
+    </View>
+    </ScreenTransition>
   );
 }
 
@@ -256,7 +264,7 @@ const styles = StyleSheet.create({
   historyName:{ fontSize: 13, fontWeight: '600', color: '#1A1A1A' },
   historyDate:{ fontSize: 11, color: '#999' },
   historyRight:{ alignItems: 'flex-end' },
-  historyOffset:{ fontSize: 13, fontWeight: '700', color: '#2E7D32' },
+  historyOffset:{ fontSize: 13, fontWeight: '700', color: '#8FA832' },
   historyAmount:{ fontSize: 11, color: '#999' },
 
   modalOverlay:{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
@@ -268,8 +276,8 @@ const styles = StyleSheet.create({
   modalStatVal:{ fontSize: 22, fontWeight: '800', color: '#1A1A1A' },
   modalStatLabel:{ fontSize: 11, color: '#888' },
   qtyRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 16 },
-  qtyBtn:     { width: 44, height: 44, borderRadius: 22, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center' },
-  qtyBtnText: { fontSize: 24, fontWeight: '700', color: '#2E7D32' },
+  qtyBtn:     { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(178,208,84,0.12)', justifyContent: 'center', alignItems: 'center' },
+  qtyBtnText: { fontSize: 24, fontWeight: '700', color: '#8FA832' },
   qtyNum:     { fontSize: 28, fontWeight: '800', color: '#1A1A1A', minWidth: 40, textAlign: 'center' },
   modalNote:  { fontSize: 11, color: '#888', textAlign: 'center', fontStyle: 'italic', marginBottom: 20, lineHeight: 16 },
   modalActions:{ flexDirection: 'row', gap: 12 },

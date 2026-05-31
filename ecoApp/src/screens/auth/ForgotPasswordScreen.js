@@ -3,6 +3,8 @@ import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Touchable
 import { Text, TextInput, Button } from 'react-native-paper';
 import { forgotPassword } from '../../api/api';
 import { Colors, Shadow, Radii, Spacing } from '../../theme';
+import BackButton from '../../components/BackButton';
+import ScreenTransition from '../../components/ScreenTransition';
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail]     = useState('');
@@ -30,6 +32,9 @@ export default function ForgotPasswordScreen({ navigation }) {
   };
 
   return (
+    <ScreenTransition>
+    <View style={styles.flex}>
+    <BackButton dark />
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
@@ -95,6 +100,8 @@ export default function ForgotPasswordScreen({ navigation }) {
         <Text style={styles.footer}>🌿 EcoTrack AI — FYP Carbon Footprint Tracker</Text>
       </ScrollView>
     </KeyboardAvoidingView>
+    </View>
+    </ScreenTransition>
   );
 }
 
