@@ -54,14 +54,21 @@ const EF = {
 
 // Badges definition
 const BADGES = [
-    { id: 'first_log',     name: 'First Step',     icon: '🌱', description: 'Logged your first activity' },
-    { id: 'eco_walker',    name: 'Eco Walker',      icon: '🚶', description: '10+ walking/cycling activities' },
-    { id: 'green_diet',    name: 'Green Plate',     icon: '🥗', description: '10+ vegan/vegetarian meals' },
-    { id: 'streak_7',      name: '7-Day Streak',    icon: '🔥', description: 'Logged activities 7 days in a row' },
-    { id: 'streak_30',     name: '30-Day Streak',   icon: '⚡', description: 'Logged activities 30 days in a row' },
-    { id: 'century',       name: 'Century Logger',  icon: '💯', description: 'Logged 100 activities' },
-    { id: 'low_carbon_day',name: 'Low Carbon Day',  icon: '🌍', description: 'Kept daily emissions under 5kg CO₂' },
-    { id: 'energy_saver',  name: 'Energy Saver',    icon: '⚡', description: 'Logged 20+ energy-saving activities' },
+    { id: 'first_log',      name: 'First Step',      icon: '🌱', description: 'Logged your first activity'             },
+    { id: 'eco_walker',     name: 'Eco Walker',       icon: '🚶', description: '10+ walking/cycling activities'         },
+    { id: 'green_diet',     name: 'Green Plate',      icon: '🥗', description: '10+ vegan/vegetarian meals'             },
+    { id: 'streak_7',       name: '7-Day Streak',     icon: '🔥', description: 'Logged activities 7 days in a row'      },
+    { id: 'streak_30',      name: '30-Day Streak',    icon: '⚡', description: 'Logged activities 30 days in a row'     },
+    { id: 'century',        name: 'Century Logger',   icon: '💯', description: 'Logged 100 activities'                  },
+    { id: 'low_carbon_day', name: 'Low Carbon Day',   icon: '🌍', description: 'Kept daily emissions under 5 kg CO₂'   },
+    { id: 'energy_saver',   name: 'Energy Saver',     icon: '💡', description: 'Logged 20+ energy-saving activities'    },
+    { id: 'offset_50',      name: 'Offset Hero',      icon: '🌿', description: 'Offset 50 kg CO₂'                      },
+    { id: 'offset_100',     name: 'Carbon Slayer',    icon: '⚔️', description: 'Offset 100 kg CO₂'                     },
+    { id: 'plant_meals_30', name: 'Plant Power',      icon: '🥦', description: '30 plant-based meals logged'            },
+    { id: 'low_month',      name: 'Eco Month',        icon: '🗓️', description: 'Monthly emissions under 100 kg CO₂'   },
+    { id: 'activities_50',  name: 'Half Century',     icon: '🎯', description: 'Logged 50 activities'                   },
+    { id: 'points_1000',    name: 'Eco Achiever',     icon: '🏅', description: 'Earned 1,000 eco points'               },
+    { id: 'points_10000',   name: 'Eco Legend',       icon: '🏆', description: 'Earned 10,000 eco points'              },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -119,6 +126,18 @@ const checkBadges = (stats, activity, allActivities) => {
     if (!hasBadge('streak_30') && stats.currentStreak >= 30)
         newBadges.push(BADGES.find(b => b.id === 'streak_30'));
 
+    if (!hasBadge('activities_50') && stats.totalActivities >= 50)
+        newBadges.push(BADGES.find(b => b.id === 'activities_50'));
+
+    if (!hasBadge('points_1000') && stats.totalPoints >= 1000)
+        newBadges.push(BADGES.find(b => b.id === 'points_1000'));
+
+    if (!hasBadge('points_10000') && stats.totalPoints >= 10000)
+        newBadges.push(BADGES.find(b => b.id === 'points_10000'));
+
+    if (!hasBadge('low_month') && stats.monthlyEmissions > 0 && stats.monthlyEmissions < 100)
+        newBadges.push(BADGES.find(b => b.id === 'low_month'));
+
     const ecoTransport = allActivities.filter(a =>
         a.category === 'transport' && ['bicycle', 'walking'].includes(a.subType)).length;
     if (!hasBadge('eco_walker') && ecoTransport >= 10)
@@ -128,6 +147,9 @@ const checkBadges = (stats, activity, allActivities) => {
         a.category === 'food' && ['vegan', 'vegetarian'].includes(a.subType)).length;
     if (!hasBadge('green_diet') && greenMeals >= 10)
         newBadges.push(BADGES.find(b => b.id === 'green_diet'));
+
+    if (!hasBadge('plant_meals_30') && greenMeals >= 30)
+        newBadges.push(BADGES.find(b => b.id === 'plant_meals_30'));
 
     newBadges.forEach(badge => { if (badge) stats.badges.push(badge); });
     return newBadges;

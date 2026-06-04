@@ -29,7 +29,7 @@ function GoogleIcon({ size = 20 }) {
 }
 
 WebBrowser.maybeCompleteAuthSession();
-const BACKEND_URL  = 'http://localhost:3000';
+const BACKEND_URL  = Platform.OS === 'web' ? 'http://localhost:3000' : 'http://192.168.100.63:3000';
 const FRONTEND_URL = 'http://localhost:8081';
 
 export default function LoginScreen({ navigation, route }) {
@@ -343,7 +343,7 @@ const s = StyleSheet.create({
   // ── Glass card ──────────────────────────────────────────────────────────────
   appHeader: {
     alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 70 : 52,
+    paddingTop: Platform.OS === 'ios' ? 70 : Platform.OS === 'web' ? 64 : 52,
     paddingBottom: 20,
   },
   appName: {

@@ -2,12 +2,12 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   TextInput, RefreshControl, ActivityIndicator, Dimensions,
-  Platform, ImageBackground, Animated, Easing, Image,
+  Platform, ImageBackground, Animated, Easing, Image, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Circle, G } from 'react-native-svg';
-import { getActivitySummary, getActivities } from '../../api/api';
+import { getActivitySummary, getActivities, getUnreadCount } from '../../api/api';
 import { useAppTheme, buildC } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -168,6 +168,7 @@ export default function DashboardScreen({ navigation }) {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [spotSearch, setSpotSearch] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
   const tipIndex    = useRef(Math.floor(Math.random() * TIPS.length));
   const [avatarUri, setAvatarUri] = useState(null);
   const barAnimRef  = useRef(new Animated.Value(0));
@@ -187,18 +188,47 @@ export default function DashboardScreen({ navigation }) {
 
   const fetchData = useCallback(async () => {
     try {
-      const [sumRes, actRes] = await Promise.all([
+      const [sumRes, actRes, unreadRes] = await Promise.all([
         getActivitySummary(),
         getActivities({ limit: 30 }),
+        getUnreadCount().catch(() => ({ data: { count: 0 } })),
       ]);
       setSummary(sumRes.data);
       setActivities(actRes.data?.activities ?? actRes.data?.data ?? []);
+      setUnreadCount(unreadRes.data?.count ?? 0);
       startBarAnim();
     } catch { /* ignore */ }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // One-time alert when emissions exceed daily limit
+  const limitAlertedRef = useRef(false);
+  useEffect(() => {
+    if (!summary || limitAlertedRef.current) return;
+    const todayCO2val = parseFloat((summary.today?.co2e ?? 0).toFixed(1));
+    const limit       = user?.dailyThreshold ?? DEFAULT_LIMIT;
+    if (todayCO2val > limit) {
+      limitAlertedRef.current = true;
+      const excess = (todayCO2val - limit).toFixed(1);
+      Alert.alert(
+        '⚠️ Emission Limit Exceeded',
+        `You've emitted ${todayCO2val} kg CO₂ today — ${excess} kg over your ${limit} kg limit.\n\nOffset your carbon footprint now?`,
+        [
+          { text: 'Later', style: 'cancel' },
+          {
+            text: '🌍 Carbon Offset',
+            onPress: () => navigation.navigate('CarbonOffset', {
+              excessKg:  parseFloat(excess),
+              todayKg:   todayCO2val,
+              threshold: limit,
+            }),
+          },
+        ]
+      );
+    }
+  }, [summary]);
 
   const loadPhotos = async () => {
     if (!user?._id) return;
@@ -278,17 +308,30 @@ export default function DashboardScreen({ navigation }) {
           style={StyleSheet.absoluteFill}
         />
 
-        {/* Top bar */}
+        {/* Top bar — notification + settings on right */}
         <View style={s.heroTop}>
-          <View style={s.heroLogoWrap}>
-            <Image
-              source={require('../../../assets/carbon-icon.png')}
-              style={s.heroLogoImg}
-              resizeMode="contain"
-            />
-            <Text style={s.heroLogoTxt}>EcoTrack AI</Text>
-          </View>
-          <TouchableOpacity style={s.notifBtn} onPress={() => navigation.navigate('Settings')}>
+          {/* Notification bell with badge */}
+          <TouchableOpacity
+            style={s.notifBtn}
+            onPress={() => navigation.navigate('Alerts')}
+            activeOpacity={0.8}
+          >
+            <Text style={s.notifIcon}>🔔</Text>
+            {unreadCount > 0 && (
+              <View style={s.notifBadge}>
+                <Text style={s.notifBadgeTxt}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Settings */}
+          <TouchableOpacity
+            style={s.notifBtn}
+            onPress={() => navigation.navigate('Settings')}
+            activeOpacity={0.8}
+          >
             <Text style={s.notifIcon}>⚙️</Text>
           </TouchableOpacity>
         </View>
@@ -383,6 +426,7 @@ export default function DashboardScreen({ navigation }) {
           </Text>
           <Text style={s.progressMetaTxt}>{DAILY_LIMIT} kg</Text>
         </View>
+
       </View>
 
       {/* ══════════════════════════════════════════════════════════════════
@@ -518,6 +562,7 @@ export default function DashboardScreen({ navigation }) {
         );
       })()}
 
+
       {/* ══════════════════════════════════════════════════════════════════
           FIND ECO SPOTS  —  search bar + quick chips
       ══════════════════════════════════════════════════════════════════ */}
@@ -630,9 +675,55 @@ export default function DashboardScreen({ navigation }) {
                 <Text style={s.offsetNote}>≈ 20 kg CO₂/tree/yr</Text>
               </View>
             </View>
+
+            {/* Carbon Offset CTA — right below Monthly Offset widget */}
+            <TouchableOpacity
+              style={s.rejuvBtn}
+              onPress={() => navigation.navigate('CarbonOffset', {
+                excessKg:  !underLimit ? parseFloat(diffKg) : 0,
+                todayKg:   todayCO2,
+                threshold: DAILY_LIMIT,
+              })}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={!underLimit ? ['#52C77A', '#2D7A4F'] : ['#B2D054', '#8FA832']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={s.rejuvBtnGrad}
+              >
+                <Text style={s.rejuvBtnIcon}>{!underLimit ? '🌱' : '🌍'}</Text>
+                <View>
+                  <Text style={s.rejuvBtnTitle}>Carbon Offset</Text>
+                  <Text style={s.rejuvBtnSub}>
+                    {!underLimit
+                      ? `Offset ${diffKg} kg excess CO₂ now`
+                      : 'Offset your carbon footprint'}
+                  </Text>
+                </View>
+                <Text style={s.rejuvBtnArrow}>→</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         );
       })()}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          ECO GARDEN TEASER
+      ══════════════════════════════════════════════════════════════════ */}
+      <View style={s.section}>
+        <TouchableOpacity onPress={() => navigation.navigate('EcoGarden')} activeOpacity={0.88}>
+          <LinearGradient colors={['#071A0F', '#0A2012']} style={s.gardenTeaser}>
+            <View style={s.gardenTeaserLeft}>
+              <Text style={s.gardenTeaserEmoji}>🌍</Text>
+              <View>
+                <Text style={s.gardenTeaserTitle}>Your Eco Planet</Text>
+                <Text style={s.gardenTeaserSub}>Your eco actions grow a living world</Text>
+              </View>
+            </View>
+            <Text style={s.gardenTeaserArrow}>→</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
 
       {/* ══════════════════════════════════════════════════════════════════
           TIP OF THE DAY
@@ -741,9 +832,10 @@ function makeStyles(C) { return StyleSheet.create({
   heroTop: {
     width: '100%',
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 58 : 40,
+    gap: 10,
+    paddingTop: Platform.OS === 'ios' ? 58 : Platform.OS === 'web' ? 52 : 40,
     paddingHorizontal: 22,
   },
   heroLogoWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -754,12 +846,22 @@ function makeStyles(C) { return StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
   notifBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: 'rgba(0,0,0,0.42)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center', justifyContent: 'center',
+    position: 'relative',
   },
   notifIcon: { fontSize: 18 },
+  notifBadge: {
+    position: 'absolute', top: -4, right: -4,
+    backgroundColor: '#FF4444',
+    borderRadius: 10, minWidth: 18, height: 18,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5, borderColor: '#fff',
+  },
+  notifBadgeTxt: { fontSize: 9, fontWeight: '800', color: '#fff' },
 
   // Outer glow → ring → glass circle
   circleGlow: {
@@ -859,6 +961,23 @@ function makeStyles(C) { return StyleSheet.create({
   progressFill: { height: 9, borderRadius: 9 },
   progressMeta: { flexDirection: 'row', justifyContent: 'space-between' },
   progressMetaTxt: { fontSize: 10, color: C.textMuted },
+
+  // ─── Rejuvenate CTA ───────────────────────────────────────────────────────
+  // Eco Garden teaser
+  gardenTeaser:     { borderRadius: 18, padding: 16, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(178,208,84,0.2)' },
+  gardenTeaserLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  gardenTeaserEmoji:{ fontSize: 32 },
+  gardenTeaserTitle:{ fontSize: 14, fontWeight: '800', color: '#EFF4EE' },
+  gardenTeaserSub:  { fontSize: 11, color: 'rgba(239,244,238,0.5)', marginTop: 2 },
+  gardenTeaserArrow:{ fontSize: 20, color: '#B2D054', fontWeight: '800' },
+
+  rejuvBtn:     { marginTop: 14, borderRadius: 16, overflow: 'hidden' },
+  rejuvBtnGrad: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 13, gap: 12 },
+  rejuvBtnIcon: { fontSize: 22 },
+  rejuvBtnTitle:{ fontSize: 14, fontWeight: '800', color: '#071209' },
+  rejuvBtnSub:  { fontSize: 11, color: 'rgba(7,18,9,0.7)', marginTop: 1 },
+  rejuvBtnArrow:{ fontSize: 18, fontWeight: '800', color: '#071209', marginLeft: 'auto' },
 
   // ─── Shared section layout ────────────────────────────────────────────────
   section:    { marginHorizontal: 16, marginTop: 22 },

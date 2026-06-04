@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 const BASE_URL = __DEV__
   ? Platform.OS === 'web'
     ? 'http://localhost:3000/api'            // web browser
-    : 'http://192.168.18.201:3000/api'       // mobile device on same WiFi
+    : 'http://192.168.100.63:3000/api'        // mobile device on same WiFi
   : 'https://your-production-api.com/api';   // production
 
 const api = axios.create({
@@ -80,5 +80,12 @@ export const getOffsetPrograms  = ()             => api.get('/offset/programs');
 export const contributeOffset   = (data)         => api.post('/offset/contribute', data);
 export const getOffsetBalance   = ()             => api.get('/offset/balance');
 export const getOffsetHistory   = ()             => api.get('/offset/history');
+
+// ─── Rejuvenate / Real-time Patch API offset ──────────────────────────────────
+export const checkEmissionLimit = ()             => api.get('/offset/check-limit');
+export const getCommunityGoal   = ()             => api.get('/offset/community-goal');
+export const getPatchProjects   = ()             => api.get('/offset/patch/projects');
+export const getPatchEstimate   = (mass_kg)      => api.get('/offset/patch/estimate', { params: { mass_kg } });
+export const createPatchOrder   = (data)         => api.post('/offset/patch/order', data);
 
 export default api;

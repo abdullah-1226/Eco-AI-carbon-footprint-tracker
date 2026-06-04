@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Switch,
+  View, Text, StyleSheet, ScrollView, Switch, Modal,
   TouchableOpacity, Share, Alert, Platform, Linking,
   TextInput, ActivityIndicator,
 } from 'react-native';
@@ -132,6 +132,7 @@ export default function SettingsScreen({ navigation }) {
   const [notifEnabled, setNotifEnabled] = useState(false);
   const [notifStatus,  setNotifStatus]  = useState('default');
   const [sharing, setSharing]           = useState(false);
+  const [legalModal, setLegalModal]     = useState(null); // 'privacy' | 'terms' | null
 
   // ── Carbon limit state ────────────────────────────────────────────────────
   const currentLimit = user?.dailyThreshold ?? RECOMMENDED;
@@ -391,7 +392,20 @@ export default function SettingsScreen({ navigation }) {
           iconBg="rgba(245,158,11,0.12)"
           label="Rate the App"
           sub="Love the app? Leave us a review"
-          onPress={() => Alert.alert('Thank you!', 'App store rating coming soon.')}
+          onPress={() => {
+            const url = Platform.OS === 'ios'
+              ? 'itms-apps://itunes.apple.com/app/idYOUR_APP_ID?action=write-review'
+              : 'market://details?id=com.ecotrack.ai';
+            Linking.canOpenURL(url)
+              .then(supported => {
+                if (supported) {
+                  Linking.openURL(url);
+                } else {
+                  Linking.openURL('https://play.google.com/store/apps/details?id=com.ecotrack.ai');
+                }
+              })
+              .catch(() => Alert.alert('Thank you! 🌿', 'App store review — coming when we publish on stores!'));
+          }}
           accent={AMBER}
           s={s} C={C}
         />
@@ -435,7 +449,7 @@ export default function SettingsScreen({ navigation }) {
           iconBg="rgba(168,85,247,0.10)"
           label="Privacy Policy"
           sub="How we handle your data"
-          onPress={() => Alert.alert('Privacy Policy', 'We never sell your data. All emission data is stored securely and privately.')}
+          onPress={() => setLegalModal('privacy')}
           s={s} C={C}
         />
         <Divider s={s} />
@@ -444,7 +458,7 @@ export default function SettingsScreen({ navigation }) {
           iconBg="rgba(168,85,247,0.10)"
           label="Terms of Service"
           sub="Usage terms and conditions"
-          onPress={() => Alert.alert('Terms of Service', 'By using EcoTrack AI you agree to our terms of service.')}
+          onPress={() => setLegalModal('terms')}
           s={s} C={C}
         />
         <Divider s={s} />
@@ -462,6 +476,97 @@ export default function SettingsScreen({ navigation }) {
       <View style={{ height: 48 }} />
     </ScrollView>
     </LinearGradient>
+
+    {/* ── Privacy Policy / Terms of Service Modal ── */}
+    <Modal
+      visible={!!legalModal}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={() => setLegalModal(null)}
+    >
+      <LinearGradient colors={['#060F08', '#0A1A0F']} style={{ flex: 1 }}>
+        {/* Header */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          paddingTop: Platform.OS === 'ios' ? 56 : 36,
+          paddingHorizontal: 20, paddingBottom: 16,
+          borderBottomWidth: 1, borderBottomColor: 'rgba(178,208,84,0.15)',
+        }}>
+          <TouchableOpacity
+            onPress={() => setLegalModal(null)}
+            style={{
+              width: 38, height: 38, borderRadius: 19,
+              backgroundColor: 'rgba(178,208,84,0.12)',
+              alignItems: 'center', justifyContent: 'center', marginRight: 14,
+            }}
+          >
+            <Text style={{ fontSize: 18, color: '#B2D054' }}>←</Text>
+          </TouchableOpacity>
+          <View>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: '#EFF4EE' }}>
+              {legalModal === 'privacy' ? '📋 Privacy Policy' : '📄 Terms of Service'}
+            </Text>
+            <Text style={{ fontSize: 11, color: 'rgba(239,244,238,0.5)', marginTop: 2 }}>
+              EcoTrack AI · Effective: January 2025
+            </Text>
+          </View>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {legalModal === 'privacy' ? (
+            <>
+              {[
+                { title: '1. Information We Collect', body: 'EcoTrack AI collects information you provide directly, including your name, email address, and carbon activity logs (transport, food, energy, and shopping habits). We also collect anonymized usage data to improve app performance.' },
+                { title: '2. How We Use Your Data', body: 'Your data is used exclusively to:\n• Calculate your carbon footprint\n• Provide personalized eco recommendations\n• Generate reports and track your progress\n• Send optional daily reminders\n\nWe do NOT sell, trade, or rent your personal data to third parties.' },
+                { title: '3. Data Storage & Security', body: 'All data is encrypted in transit (TLS/HTTPS) and stored on secure servers. Passwords are hashed using bcrypt. We implement industry-standard security measures to protect your information from unauthorized access.' },
+                { title: '4. Third-Party Services', body: 'EcoTrack AI integrates with:\n• Google OAuth (sign-in only — we receive your name and email)\n• Ecologi API (carbon offset processing)\n• OpenStreetMap (eco spots location data)\n\nThese services have their own privacy policies.' },
+                { title: '5. Data Retention', body: 'You may request deletion of your account and all associated data at any time by contacting us. Upon deletion, all personal data is permanently removed from our servers within 30 days.' },
+                { title: '6. Children\'s Privacy', body: 'EcoTrack AI is not directed to children under 13. We do not knowingly collect personal information from children.' },
+                { title: '7. Your Rights', body: 'You have the right to:\n• Access your personal data\n• Correct inaccurate data\n• Request data deletion\n• Export your activity data\n\nTo exercise these rights, contact us at abdullahjarale@gmail.com' },
+                { title: '8. Contact Us', body: 'For privacy concerns or questions:\n📧 abdullahjarale@gmail.com\n🌍 EcoTrack AI — Final Year Project\n📍 Pakistan' },
+              ].map((section, i) => (
+                <View key={i} style={{ marginBottom: 22 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#B2D054', marginBottom: 8 }}>
+                    {section.title}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: 'rgba(239,244,238,0.75)', lineHeight: 21 }}>
+                    {section.body}
+                  </Text>
+                </View>
+              ))}
+            </>
+          ) : (
+            <>
+              {[
+                { title: '1. Acceptance of Terms', body: 'By downloading, installing, or using EcoTrack AI, you agree to be bound by these Terms of Service. If you do not agree, please do not use the application.' },
+                { title: '2. Description of Service', body: 'EcoTrack AI is a carbon footprint tracking application that helps users monitor, understand, and reduce their environmental impact through activity logging, AI coaching, and carbon offset features.' },
+                { title: '3. User Accounts', body: 'You are responsible for:\n• Maintaining the confidentiality of your account credentials\n• All activities that occur under your account\n• Providing accurate and truthful information\n• Notifying us immediately of any unauthorized access' },
+                { title: '4. Acceptable Use', body: 'You agree NOT to:\n• Use the app for any unlawful purpose\n• Attempt to gain unauthorized access to our systems\n• Submit false or misleading activity data\n• Reverse engineer or copy any part of the application\n• Harass other users on the community features' },
+                { title: '5. Carbon Offset Features', body: 'Carbon offset contributions made through EcoTrack AI are processed via Ecologi. Offset calculations are based on standard environmental data (1 tree ≈ 21 kg CO₂/year). These are estimates for educational awareness and may vary in real-world impact.' },
+                { title: '6. Intellectual Property', body: 'EcoTrack AI, its logo, design, and content are the intellectual property of the development team. The app is developed as a Final Year Project. Unauthorized commercial use is prohibited.' },
+                { title: '7. Disclaimer of Warranties', body: 'EcoTrack AI is provided "as is" without warranties of any kind. Carbon footprint calculations are estimates based on published emission factors and may not reflect exact real-world values.' },
+                { title: '8. Limitation of Liability', body: 'The EcoTrack AI team shall not be liable for any indirect, incidental, or consequential damages arising from use of the application, including but not limited to data loss or emission calculation inaccuracies.' },
+                { title: '9. Changes to Terms', body: 'We reserve the right to modify these terms at any time. Continued use of the app after changes constitutes acceptance of the new terms. We will notify users of significant changes.' },
+                { title: '10. Contact', body: 'Questions about these Terms?\n📧 abdullahjarale@gmail.com\n🌍 EcoTrack AI — Final Year Project\n📍 Pakistan' },
+              ].map((section, i) => (
+                <View key={i} style={{ marginBottom: 22 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#B2D054', marginBottom: 8 }}>
+                    {section.title}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: 'rgba(239,244,238,0.75)', lineHeight: 21 }}>
+                    {section.body}
+                  </Text>
+                </View>
+              ))}
+            </>
+          )}
+        </ScrollView>
+      </LinearGradient>
+    </Modal>
+
     </ScreenTransition>
   );
 }
@@ -484,11 +589,7 @@ function makeStyles(C) { return StyleSheet.create({
   },
   backArrow: { fontSize: 20, color: C.text, lineHeight: 24 },
   backTxt:   { fontSize: 14, color: C.text, fontWeight: '600' },
-  headerGlow: {
-    position: 'absolute', top: 60, alignSelf: 'center',
-    width: 200, height: 200, borderRadius: 100,
-    backgroundColor: 'rgba(0,196,232,0.06)',
-  },
+  headerGlow: { display: 'none' },
   headerEmoji: { fontSize: 44, marginBottom: 10 },
   headerTitle: { fontSize: 26, fontWeight: '900', color: C.text, letterSpacing: 0.2 },
   headerSub:   { fontSize: 13, color: C.textSub, marginTop: 5, textAlign: 'center' },

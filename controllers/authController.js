@@ -32,12 +32,17 @@ const sendTokenResponse = (user, statusCode, res) => {
         success: true,
         token,
         user: {
-            id:     user._id,
-            name:   user.name,
-            email:  user.email,
-            role:   user.role,
-            avatar: user.avatar,
-            provider: user.provider
+            id:                 user._id,
+            name:               user.name,
+            email:              user.email,
+            role:               user.role,
+            avatar:             user.avatar,
+            provider:           user.provider,
+            onboardingComplete: user.onboardingComplete,
+            dailyThreshold:     user.dailyThreshold,
+            age:                user.age,
+            gender:             user.gender,
+            bio:                user.bio,
         }
     });
 };
@@ -110,7 +115,7 @@ exports.login = async (req, res, next) => {
             return res.status(400).json({ success: false, error: 'Please provide email and password' });
         }
 
-        const user = await User.findOne({ email }).select('+password');
+        const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password');
 
         if (!user) {
             return res.status(401).json({ success: false, error: 'Invalid credentials' });

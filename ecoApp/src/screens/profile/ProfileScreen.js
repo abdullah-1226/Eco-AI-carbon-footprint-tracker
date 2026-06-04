@@ -90,26 +90,27 @@ function BottomSheet({ visible, onClose, title, options }) {
 }
 
 const bs = StyleSheet.create({
-  backdrop:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.48)' },
+  backdrop:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.65)' },
   sheet:      {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    backgroundColor: '#0D1A10',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopWidth: 1, borderColor: 'rgba(178,208,84,0.2)',
     paddingBottom: Platform.OS === 'ios' ? 36 : 20,
     paddingHorizontal: 20, paddingTop: 12,
-    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20, elevation: 20,
   },
-  handle:      { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D5DB', alignSelf: 'center', marginBottom: 14 },
-  title:       { fontSize: 15, fontWeight: '800', color: '#111', marginBottom: 14, textAlign: 'center' },
+  handle:      { width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(178,208,84,0.3)', alignSelf: 'center', marginBottom: 14 },
+  title:       { fontSize: 15, fontWeight: '800', color: '#EFF4EE', marginBottom: 14, textAlign: 'center' },
   row:         {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 15,
-    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(178,208,84,0.1)',
   },
   rowDanger:        { },
   rowIcon:          { fontSize: 20, marginRight: 14, width: 28, textAlign: 'center' },
-  rowLabel:         { fontSize: 15, fontWeight: '600', color: '#111' },
-  rowLabelDanger:   { color: '#DC2626' },
+  rowLabel:         { fontSize: 15, fontWeight: '600', color: '#EFF4EE' },
+  rowLabelDanger:   { color: '#FF7B5C' },
   cancelRow:        { marginTop: 8, paddingVertical: 14, alignItems: 'center' },
-  cancelTxt:        { fontSize: 15, fontWeight: '700', color: '#6B7280' },
+  cancelTxt:        { fontSize: 15, fontWeight: '700', color: 'rgba(239,244,238,0.52)' },
 });
 
 // ─── Animated gender pill ─────────────────────────────────────────────────────
@@ -398,25 +399,25 @@ export default function ProfileScreen({ navigation }) {
             <Text style={st.lbl}>Full Name</Text>
             <TextInput mode="outlined" value={name} onChangeText={setName} placeholder="Your full name"
               left={<TextInput.Icon icon="account" color={Colors.textMuted} />}
-              style={st.input} outlineColor={Colors.border} activeOutlineColor={Colors.primary} theme={{ roundness: Radii.md }} />
+              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Text style={st.lbl}>Email</Text>
             <TextInput mode="outlined" value={email} onChangeText={setEmail} placeholder="your@email.com"
               keyboardType="email-address" autoCapitalize="none"
               left={<TextInput.Icon icon="email" color={Colors.textMuted} />}
-              style={st.input} outlineColor={Colors.border} activeOutlineColor={Colors.primary} theme={{ roundness: Radii.md }} />
+              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Text style={st.lbl}>Bio <Text style={st.lblHint}>({bio.length}/200)</Text></Text>
             <TextInput mode="outlined" value={bio} onChangeText={setBio}
               placeholder="Tell others about yourself…" multiline numberOfLines={3} maxLength={200}
               left={<TextInput.Icon icon="text" color={Colors.textMuted} />}
-              style={[st.input, { minHeight: 80 }]} outlineColor={Colors.border} activeOutlineColor={Colors.primary} theme={{ roundness: Radii.md }} />
+              style={[st.input, { minHeight: 80 }]} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Text style={st.lbl}>Age</Text>
             <TextInput mode="outlined" value={age} onChangeText={setAge}
               placeholder="Your age" keyboardType="numeric" maxLength={3}
               left={<TextInput.Icon icon="cake" color={Colors.textMuted} />}
-              style={st.input} outlineColor={Colors.border} activeOutlineColor={Colors.primary} theme={{ roundness: Radii.md }} />
+              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Text style={st.lbl}>Gender</Text>
             <View style={st.gGrid}>
@@ -445,14 +446,14 @@ export default function ProfileScreen({ navigation }) {
               placeholder="Current password" secureTextEntry={!showCurrent}
               left={<TextInput.Icon icon="lock" color={Colors.textMuted} />}
               right={<TextInput.Icon icon={showCurrent ? 'eye-off' : 'eye'} onPress={() => setShowCurrent(!showCurrent)} color={Colors.textMuted} />}
-              style={st.input} outlineColor={Colors.border} activeOutlineColor={Colors.primary} theme={{ roundness: Radii.md }} />
+              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Text style={st.lbl}>New Password</Text>
             <TextInput mode="outlined" value={newPass} onChangeText={setNewPass}
               placeholder="Min. 6 characters" secureTextEntry={!showNew}
               left={<TextInput.Icon icon="lock-reset" color={Colors.textMuted} />}
               right={<TextInput.Icon icon={showNew ? 'eye-off' : 'eye'} onPress={() => setShowNew(!showNew)} color={Colors.textMuted} />}
-              style={st.input} outlineColor={Colors.border} activeOutlineColor={Colors.primary} theme={{ roundness: Radii.md }} />
+              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Button mode="contained" icon="lock-check" onPress={handleUpdatePassword}
               loading={passLoading} disabled={passLoading}
@@ -483,139 +484,130 @@ export default function ProfileScreen({ navigation }) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const st = StyleSheet.create({
   flex: { flex: 1 },
-  root: { flex: 1, backgroundColor: '#F4F7F2' },
+  root: { flex: 1, backgroundColor: '#060F08' },
 
   // Cover hero
   coverWrap:     { width: '100%', height: COVER_H, backgroundColor: '#0A1A0F', position: 'relative' },
   coverImg:      { ...StyleSheet.absoluteFillObject },
   coverEmpty:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0A1A0F' },
   coverEmptyIcon:{ fontSize: 36, marginBottom: 6 },
-  coverEmptyTxt: { fontSize: 13, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
+  coverEmptyTxt: { fontSize: 13, color: 'rgba(239,244,238,0.52)', fontWeight: '600' },
   coverSpinner:  { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)',
                    alignItems: 'center', justifyContent: 'center', zIndex: 5 },
 
-  // Three-dots button (top-right of cover)
   dotsBtn:    {
     position: 'absolute', top: 14, right: 14, zIndex: 20,
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: 'rgba(0,0,0,0.52)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',
+    borderWidth: 1, borderColor: 'rgba(178,208,84,0.4)',
     alignItems: 'center', justifyContent: 'center',
   },
-  dotsBtnTxt: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 1.5, lineHeight: 18 },
+  dotsBtnTxt: { color: '#B2D054', fontSize: 14, fontWeight: '900', letterSpacing: 1.5, lineHeight: 18 },
 
-  // Avatar overlapping cover bottom
   avatarAnchor: {
     position: 'absolute', bottom: -(AVATAR_SZ / 2), left: 18, zIndex: 15,
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
   },
   avatarRing: {
     width: AVATAR_SZ, height: AVATAR_SZ, borderRadius: AVATAR_SZ / 2,
-    borderWidth: 3.5, borderColor: '#fff', overflow: 'hidden',
-    shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 8, elevation: 8,
+    borderWidth: 3, borderColor: '#B2D054', overflow: 'hidden',
+    shadowColor: '#B2D054', shadowOpacity: 0.35, shadowRadius: 8, elevation: 8,
   },
   avatarImg:      { width: '100%', height: '100%' },
-  avatarFallback: { flex: 1, backgroundColor: '#B2D054', alignItems: 'center', justifyContent: 'center' },
-  avatarInitials: { fontSize: 30, fontWeight: '900', color: '#fff' },
+  avatarFallback: { flex: 1, backgroundColor: '#0D1A10', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(178,208,84,0.3)' },
+  avatarInitials: { fontSize: 30, fontWeight: '900', color: '#B2D054' },
 
-  // Camera widget — small pill beside avatar
   camWidget: {
     width: 34, height: 34, borderRadius: 17,
     backgroundColor: '#0C1B12',
     borderWidth: 2, borderColor: '#B2D054',
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6, elevation: 6,
+    shadowColor: '#B2D054', shadowOpacity: 0.3, shadowRadius: 6, elevation: 6,
     marginBottom: 4,
   },
   camWidgetIcon: { fontSize: 15 },
 
-  // Name block
   nameBlock: {
     marginTop: AVATAR_SZ / 2 + 14, paddingHorizontal: 18, paddingBottom: 16,
-    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E4EBE0',
+    backgroundColor: '#060F08',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(178,208,84,0.1)',
   },
-  nameText:  { fontSize: 20, fontWeight: '900', color: '#111' },
-  emailText: { fontSize: 13, color: '#6B7280', marginTop: 3, marginBottom: 10 },
+  nameText:  { fontSize: 20, fontWeight: '900', color: '#EFF4EE' },
+  emailText: { fontSize: 13, color: 'rgba(239,244,238,0.52)', marginTop: 3, marginBottom: 10 },
   metaRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   pill:      { backgroundColor: 'rgba(178,208,84,0.10)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
-               borderWidth: 1, borderColor: 'rgba(178,208,84,0.30)' },
-  pillRole:  { backgroundColor: '#E3F2FD', borderColor: '#BBDEFB' },
+               borderWidth: 1, borderColor: 'rgba(178,208,84,0.25)' },
+  pillRole:  { backgroundColor: 'rgba(82,199,122,0.1)', borderColor: 'rgba(82,199,122,0.25)' },
   pillTxt:   { fontSize: 11, fontWeight: '700', color: '#B2D054' },
 
-  // Cards
   card: {
-    backgroundColor: '#fff', marginHorizontal: 14, marginTop: 14,
+    backgroundColor: '#0D1A10', marginHorizontal: 14, marginTop: 14,
     borderRadius: 20, padding: 18,
-    borderWidth: 1, borderColor: '#E4EBE0',
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    borderWidth: 1, borderColor: 'rgba(178,208,84,0.12)',
   },
-  cardTitle: { fontSize: 16, fontWeight: '800', color: '#111' },
-  cardSub:   { fontSize: 13, color: '#9CA3AF', marginTop: 2 },
-  divider:   { marginVertical: 14, backgroundColor: '#E4EBE0' },
-  lbl:       { fontSize: 13, fontWeight: '700', color: '#374151', marginTop: 10, marginBottom: 4 },
-  lblHint:   { fontSize: 11, color: '#9CA3AF', fontWeight: '400' },
-  input:     { backgroundColor: '#fff', marginBottom: 2 },
+  cardTitle: { fontSize: 16, fontWeight: '800', color: '#EFF4EE' },
+  cardSub:   { fontSize: 13, color: 'rgba(239,244,238,0.52)', marginTop: 2 },
+  divider:   { marginVertical: 14, backgroundColor: 'rgba(178,208,84,0.12)' },
+  lbl:       { fontSize: 13, fontWeight: '700', color: 'rgba(239,244,238,0.7)', marginTop: 10, marginBottom: 4 },
+  lblHint:   { fontSize: 11, color: 'rgba(239,244,238,0.35)', fontWeight: '400' },
+  input:     { backgroundColor: '#0A1608', marginBottom: 2 },
   btnGreen:  { marginTop: 16, borderRadius: 14, backgroundColor: Colors.primary },
   btnDark:   { marginTop: 16, borderRadius: 14 },
   btnH:      { height: 50 },
 
-  // Gender grid
   gGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   gPill:     { paddingVertical: 10, paddingHorizontal: 8, borderRadius: 14,
-               borderWidth: 1.5, borderColor: '#D1D5DB', backgroundColor: '#F9FAFB', alignItems: 'center' },
-  gPillOn:   { borderColor: Colors.primary, backgroundColor: 'rgba(178,208,84,0.10)' },
-  gPillTxt:  { fontSize: 12, fontWeight: '600', color: '#6B7280' },
-  gPillTxtOn:{ color: Colors.primary, fontWeight: '800' },
+               borderWidth: 1.5, borderColor: 'rgba(178,208,84,0.2)', backgroundColor: '#0A1608', alignItems: 'center' },
+  gPillOn:   { borderColor: '#B2D054', backgroundColor: 'rgba(178,208,84,0.12)' },
+  gPillTxt:  { fontSize: 12, fontWeight: '600', color: 'rgba(239,244,238,0.52)' },
+  gPillTxtOn:{ color: '#B2D054', fontWeight: '800' },
 
-  // Profile photo card
   photoCardRow:       { flexDirection: 'row', alignItems: 'center', gap: 16 },
   avatarPreviewWrap:  { },
   avatarPreview:      { width: 80, height: 80, borderRadius: 40, overflow: 'hidden' },
-  avatarPreviewEmpty: { backgroundColor: '#E8EDE5', alignItems: 'center', justifyContent: 'center' },
+  avatarPreviewEmpty: { backgroundColor: '#0A1608', alignItems: 'center', justifyContent: 'center' },
   photoCardActions:   { flex: 1, gap: 8 },
   photoActionBtn:     {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 10, paddingHorizontal: 14,
-    backgroundColor: '#F4F7F2', borderRadius: 12,
-    borderWidth: 1, borderColor: '#E4EBE0',
+    backgroundColor: '#0A1608', borderRadius: 12,
+    borderWidth: 1, borderColor: 'rgba(178,208,84,0.15)',
   },
-  photoActionDanger:  { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  photoActionDanger:  { backgroundColor: 'rgba(255,80,60,0.08)', borderColor: 'rgba(255,80,60,0.25)' },
   photoActionIcon:    { fontSize: 16 },
-  photoActionTxt:     { fontSize: 13, fontWeight: '600', color: '#374151' },
-  photoNoPhoto:       { fontSize: 12, color: '#9CA3AF', marginTop: 4 },
+  photoActionTxt:     { fontSize: 13, fontWeight: '600', color: '#EFF4EE' },
+  photoNoPhoto:       { fontSize: 12, color: 'rgba(239,244,238,0.35)', marginTop: 4 },
 
-  // Cover photo card
   coverThumbBtn:      { borderRadius: 14, overflow: 'hidden', position: 'relative' },
   coverThumb:         { width: '100%', height: 130, borderRadius: 14 },
-  coverThumbEmpty:    { backgroundColor: 'rgba(178,208,84,0.10)', alignItems: 'center', justifyContent: 'center' },
-  coverThumbEmptyTxt: { fontSize: 12, color: '#6B7280', fontWeight: '600' },
+  coverThumbEmpty:    { backgroundColor: 'rgba(178,208,84,0.08)', alignItems: 'center', justifyContent: 'center' },
+  coverThumbEmptyTxt: { fontSize: 12, color: 'rgba(239,244,238,0.52)', fontWeight: '600' },
   coverThumbOverlay:  {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)', paddingVertical: 8, alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)', paddingVertical: 8, alignItems: 'center',
     borderBottomLeftRadius: 14, borderBottomRightRadius: 14,
   },
-  coverThumbOverlayTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  coverThumbOverlayTxt: { color: '#EFF4EE', fontSize: 12, fontWeight: '700' },
   coverCardBtns:     { flexDirection: 'row', gap: 10, marginTop: 12 },
   coverCardBtn:      {
     flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: 'center',
-    backgroundColor: '#F4F7F2', borderWidth: 1, borderColor: '#E4EBE0',
+    backgroundColor: '#0A1608', borderWidth: 1, borderColor: 'rgba(178,208,84,0.15)',
   },
-  coverCardBtnRed:   { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
-  coverCardBtnTxt:   { fontSize: 13, fontWeight: '700', color: '#374151' },
+  coverCardBtnRed:   { backgroundColor: 'rgba(255,80,60,0.08)', borderColor: 'rgba(255,80,60,0.25)' },
+  coverCardBtnTxt:   { fontSize: 13, fontWeight: '700', color: '#EFF4EE' },
 
-  // Quick links
   linkRow:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
-                 borderBottomWidth: 1, borderBottomColor: '#F0F4EE' },
+                 borderBottomWidth: 1, borderBottomColor: 'rgba(178,208,84,0.08)' },
   linkIconBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(178,208,84,0.10)',
                  alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  linkLabel:   { fontSize: 14, fontWeight: '700', color: '#111' },
-  linkDesc:    { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
-  linkArrow:   { fontSize: 22, color: '#D1D5DB' },
+  linkLabel:   { fontSize: 14, fontWeight: '700', color: '#EFF4EE' },
+  linkDesc:    { fontSize: 12, color: 'rgba(239,244,238,0.45)', marginTop: 1 },
+  linkArrow:   { fontSize: 22, color: 'rgba(178,208,84,0.35)' },
 
-  // Danger zone
-  dangerCard:  { backgroundColor: '#FEF2F2', marginHorizontal: 14, marginTop: 14,
-                 borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#FECACA' },
-  dangerTitle: { fontSize: 15, fontWeight: '800', color: '#991B1B', marginBottom: 4 },
-  dangerSub:   { fontSize: 13, color: '#B91C1C', opacity: 0.8, marginBottom: 14 },
+  dangerCard:  { backgroundColor: 'rgba(139,0,0,0.12)', marginHorizontal: 14, marginTop: 14,
+                 borderRadius: 20, padding: 18, borderWidth: 1, borderColor: 'rgba(255,80,60,0.25)' },
+  dangerTitle: { fontSize: 15, fontWeight: '800', color: '#FF7B5C', marginBottom: 4 },
+  dangerSub:   { fontSize: 13, color: 'rgba(255,123,92,0.7)', marginBottom: 14 },
   logoutBtn:   { borderRadius: 14 },
 });

@@ -451,13 +451,11 @@ export default function EcoSpotsScreen() {
   const isSearching = searchQuery.trim().length > 0;
   const hasPlaces   = !loading && places.length > 0;
 
-  return (
-    <View style={s.container}>
-      <BackButton />
-
-      {/* ── Measure header + chips height so dropdown can float below them ── */}
+  // ── Header + map extracted as ListHeaderComponent ─────────────────────────
+  const ListHeader = (
+    <>
+      {/* Header + search */}
       <View onLayout={e => setTopSectionH(e.nativeEvent.layout.height)}>
-        {/* Header */}
         <LinearGradient colors={['#0A1A0F', '#B2D054']} style={s.header}>
           <Text style={s.headerTitle}>🗺️ Nearby Eco Spots</Text>
           <Text style={s.headerSub}>
@@ -465,14 +463,12 @@ export default function EcoSpotsScreen() {
               ? `📍 ${location.latitude.toFixed(5)},  ${location.longitude.toFixed(5)}`
               : '📍 Detecting your location…'}
           </Text>
-
-          {/* Search bar */}
           <View style={s.searchBox}>
             <Text style={s.searchIcon}>🔍</Text>
             <TextInput
               style={s.searchInput}
               placeholder="Search city, parks, EV chargers…"
-              placeholderTextColor="rgba(255,255,255,0.5)"
+              placeholderTextColor="rgba(239,244,238,0.45)"
               value={searchQuery}
               onChangeText={handleSearchChange}
               returnKeyType="search"
@@ -480,7 +476,6 @@ export default function EcoSpotsScreen() {
                 setShowSuggestions(false);
                 if (suggestions.length > 0) { handleSuggestionSelect(suggestions[0]); return; }
                 if (searchQuery.trim().length < 2) return;
-                // Geocode the typed query → fly map to result → load spots there
                 try {
                   const res   = await getAutocomplete(searchQuery.trim());
                   const preds = res.data.predictions ?? [];
@@ -516,7 +511,144 @@ export default function EcoSpotsScreen() {
         </View>
       </View>
 
-      {/* ── Autocomplete dropdown — floats over map ──────────────────────── */}
+      {/* Error */}
+      {locError && (
+        <View style={s.errorBox}>
+          <Text style={s.errorText}>⚠️ {locError}</Text>
+          <TouchableOpacity onPress={getLocation} style={s.retryBtn}>
+            <Text style={s.retryTxt}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Map */}
+      <View style={[s.mapWrap, !hasPlaces && s.mapWrapFull]}>
+        <MapBoundary fallback={
+          <View style={s.mapFallback}><Text style={s.mapFallbackTxt}>🗺️ Map unavailable</Text></View>
+        }>
+          {Platform.OS === 'web' ? (
+            <WebMapView mapRef={webRef} onLoad={onMapReady} onMessage={onMapMessage} />
+          ) : (
+            <WebView ref={webRef} source={{ html: MAP_HTML }} style={s.map}
+              onLoad={onMapReady} onMessage={onMapMessage}
+              javaScriptEnabled domStorageEnabled originWhitelist={['*']}
+              mixedContentMode="always" allowFileAccess />
+          )}
+        </MapBoundary>
+
+        <TouchableOpacity style={s.myLocBtn} onPress={flyToMe}>
+          <Text style={s.myLocIcon}>🎯</Text>
+        </TouchableOpacity>
+
+        {showSearchArea && (
+          <View style={s.searchAreaWrap}>
+            <TouchableOpacity style={s.searchAreaBtn} onPress={searchThisArea}>
+              <Text style={s.searchAreaTxt}>🔍 Search this area</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {hasPlaces && (
+          <View style={s.countPill}>
+            <Text style={s.countTxt}>{isSearching ? `${places.length} results` : `${places.length} spots`}</Text>
+          </View>
+        )}
+
+        {loading && (
+          <View style={s.mapLoader}>
+            <ActivityIndicator size="large" color="#B2D054" />
+            <Text style={s.mapLoaderTxt}>
+              {isSearching ? `Searching "${searchQuery}"…` : `Finding ${activeCfg.label.toLowerCase()} nearby…`}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Results bar + scroll hint */}
+      {hasPlaces && (
+        <View style={s.resultsBar}>
+          <Text style={s.resultsTxt}>
+            {isSearching
+              ? `🔍 ${places.length} result${places.length !== 1 ? 's' : ''} · "${searchQuery}"`
+              : `${activeCfg.icon} ${places.length} ${activeCfg.label} near you · OpenStreetMap`}
+          </Text>
+          <Text style={s.scrollHint}>↑ scroll up</Text>
+        </View>
+      )}
+
+      {/* Empty state */}
+      {!loading && places.length === 0 && !locError && location && (
+        <View style={s.emptyBox}>
+          <Text style={s.emptyIcon}>{isSearching ? '🔍' : activeCfg.icon}</Text>
+          <Text style={s.emptyTitle}>
+            {isSearching ? `No results for "${searchQuery}"` : `No ${activeCfg.label} Found Nearby`}
+          </Text>
+          <Text style={s.emptySub}>
+            {isSearching
+              ? 'Try different keywords — e.g. "park", "recycling", "nursery".'
+              : `No ${activeCfg.label.toLowerCase()} found within 10 km of your location.`}
+          </Text>
+          {isSearching && (
+            <TouchableOpacity style={s.clearBtn2} onPress={clearSearch}>
+              <Text style={s.clearBtn2Txt}>Clear Search</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </>
+  );
+
+  return (
+    <View style={s.container}>
+      <BackButton />
+
+      {/* Main scrollable list — header contains map, items are place cards */}
+      <FlatList
+        data={hasPlaces ? places : []}
+        keyExtractor={item => item.id}
+        ListHeaderComponent={ListHeader}
+        contentContainerStyle={s.listContent}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item, index }) => {
+          const color    = TYPE_COLORS[item.type] || '#B2D054';
+          const icon     = item.icon || TYPE_ICONS[item.type] || '📍';
+          const selected = selectedId === item.id;
+          return (
+            <TouchableOpacity
+              style={[s.card, selected && { borderColor: color, borderWidth: 2 }]}
+              onPress={() => handleCardPress(item)}
+              activeOpacity={0.85}
+            >
+              <View style={[s.cardNum, { backgroundColor: color }]}>
+                <Text style={s.cardNumTxt}>{index + 1}</Text>
+              </View>
+              <View style={s.cardBody}>
+                <View style={s.cardNameRow}>
+                  <Text style={s.cardIcon}>{icon}</Text>
+                  <Text style={s.cardName} numberOfLines={1}>{item.name}</Text>
+                </View>
+                {isSearching && (
+                  <Text style={[s.cardTypeLbl, { color }]}>
+                    {PLACE_TYPES.find(t => t.id === item.type)?.label ?? item.type}
+                  </Text>
+                )}
+                {!!item.address && (
+                  <Text style={s.cardAddr} numberOfLines={1}>📍 {item.address}</Text>
+                )}
+                <Text style={s.cardDist}>📏 {item.distance} km away</Text>
+              </View>
+              <TouchableOpacity
+                style={[s.goBtn, { backgroundColor: color }]}
+                onPress={() => getDirections(item)}
+              >
+                <Text style={s.goBtnTxt}>Go</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          );
+        }}
+      />
+
+      {/* Autocomplete — absolute, floats over everything */}
       {showSuggestions && suggestions.length > 0 && (
         <View style={[s.suggestBox, { top: topSectionH }]}>
           {suggestions.map((sugg, i) => (
@@ -537,288 +669,126 @@ export default function EcoSpotsScreen() {
           ))}
         </View>
       )}
-
-      {/* ── Error ─────────────────────────────────────────────────────────── */}
-      {locError && (
-        <View style={s.errorBox}>
-          <Text style={s.errorText}>⚠️ {locError}</Text>
-          <TouchableOpacity onPress={getLocation} style={s.retryBtn}>
-            <Text style={s.retryTxt}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── Map ───────────────────────────────────────────────────────────── */}
-      <View style={[s.mapWrap, !hasPlaces && s.mapWrapFull]}>
-        <MapBoundary fallback={
-          <View style={s.mapFallback}>
-            <Text style={s.mapFallbackTxt}>🗺️ Map unavailable</Text>
-          </View>
-        }>
-          {Platform.OS === 'web' ? (
-            // Native iframe via Blob URL — works on web where WebView srcdoc blocks CDN tiles
-            <WebMapView
-              mapRef={webRef}
-              onLoad={onMapReady}
-              onMessage={onMapMessage}
-            />
-          ) : (
-            <WebView
-              ref={webRef}
-              source={{ html: MAP_HTML }}
-              style={s.map}
-              onLoad={onMapReady}
-              onMessage={onMapMessage}
-              javaScriptEnabled
-              domStorageEnabled
-              originWhitelist={['*']}
-              mixedContentMode="always"
-              allowFileAccess
-            />
-          )}
-        </MapBoundary>
-
-        {/* My location button */}
-        <TouchableOpacity style={s.myLocBtn} onPress={flyToMe}>
-          <Text style={s.myLocIcon}>🎯</Text>
-        </TouchableOpacity>
-
-        {/* "Search this area" — appears after user pans map, like Google Maps */}
-        {showSearchArea && (
-          <View style={s.searchAreaWrap}>
-            <TouchableOpacity style={s.searchAreaBtn} onPress={searchThisArea}>
-              <Text style={s.searchAreaTxt}>🔍 Search this area</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Count pill */}
-        {hasPlaces && (
-          <View style={s.countPill}>
-            <Text style={s.countTxt}>
-              {isSearching ? `${places.length} results` : `${places.length} spots`}
-            </Text>
-          </View>
-        )}
-
-        {/* Loading overlay */}
-        {loading && (
-          <View style={s.mapLoader}>
-            <ActivityIndicator size="large" color="#B2D054" />
-            <Text style={s.mapLoaderTxt}>
-              {isSearching
-                ? `Searching "${searchQuery}"…`
-                : `Finding ${activeCfg.label.toLowerCase()} nearby…`}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* ── Results bar ──────────────────────────────────────────────────── */}
-      {hasPlaces && (
-        <View style={s.resultsBar}>
-          <Text style={s.resultsTxt}>
-            {isSearching
-              ? `🔍 ${places.length} result${places.length !== 1 ? 's' : ''} · "${searchQuery}"`
-              : `${activeCfg.icon} ${places.length} ${activeCfg.label} near you · OpenStreetMap`}
-          </Text>
-        </View>
-      )}
-
-      {/* ── Spot cards ───────────────────────────────────────────────────── */}
-      {hasPlaces && (
-        <FlatList
-          data={places}
-          keyExtractor={item => item.id}
-          contentContainerStyle={s.list}
-          renderItem={({ item, index }) => {
-            const color    = TYPE_COLORS[item.type] || '#B2D054';
-            const icon     = item.icon || TYPE_ICONS[item.type] || '📍';
-            const selected = selectedId === item.id;
-            return (
-              <TouchableOpacity
-                style={[s.card, selected && { borderColor: color, borderWidth: 2 }]}
-                onPress={() => handleCardPress(item)}
-                activeOpacity={0.85}
-              >
-                <View style={[s.cardNum, { backgroundColor: color }]}>
-                  <Text style={s.cardNumTxt}>{index + 1}</Text>
-                </View>
-                <View style={s.cardBody}>
-                  <View style={s.cardNameRow}>
-                    <Text style={s.cardIcon}>{icon}</Text>
-                    <Text style={s.cardName} numberOfLines={1}>{item.name}</Text>
-                  </View>
-                  {isSearching && (
-                    <Text style={[s.cardTypeLbl, { color }]}>
-                      {PLACE_TYPES.find(t => t.id === item.type)?.label ?? item.type}
-                    </Text>
-                  )}
-                  {!!item.address && (
-                    <Text style={s.cardAddr} numberOfLines={1}>📍 {item.address}</Text>
-                  )}
-                  <Text style={s.cardDist}>📏 {item.distance} km away</Text>
-                </View>
-                <TouchableOpacity
-                  style={[s.goBtn, { backgroundColor: color }]}
-                  onPress={() => getDirections(item)}
-                >
-                  <Text style={s.goBtnTxt}>Go</Text>
-                </TouchableOpacity>
-              </TouchableOpacity>
-            );
-          }}
-        />
-      )}
-
-      {/* ── Empty state ──────────────────────────────────────────────────── */}
-      {!loading && places.length === 0 && !locError && location && (
-        <View style={s.emptyBox}>
-          <Text style={s.emptyIcon}>{isSearching ? '🔍' : activeCfg.icon}</Text>
-          <Text style={s.emptyTitle}>
-            {isSearching ? `No results for "${searchQuery}"` : `No ${activeCfg.label} Found Nearby`}
-          </Text>
-          <Text style={s.emptySub}>
-            {isSearching
-              ? 'Try different keywords — e.g. "park", "recycling", "nursery".'
-              : `No ${activeCfg.label.toLowerCase()} found within 10 km of your location.`}
-          </Text>
-          {isSearching && (
-            <TouchableOpacity style={s.clearBtn2} onPress={clearSearch}>
-              <Text style={s.clearBtn2Txt}>Clear Search</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7F5' },
+  container: { flex: 1, backgroundColor: '#060F08' },
 
   // Header
   header:      { paddingTop: Platform.OS === 'ios' ? 54 : 36, paddingBottom: 14, paddingHorizontal: 18 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#fff', marginBottom: 2 },
-  headerSub:   { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 12,
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#EFF4EE', marginBottom: 2 },
+  headerSub:   { fontSize: 11, color: 'rgba(239,244,238,0.52)', marginBottom: 12,
                  fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
-  searchBox:   { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.18)',
+  searchBox:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D1A10',
                  borderRadius: 14, paddingHorizontal: 12, height: 42,
-                 borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)' },
+                 borderWidth: 1, borderColor: 'rgba(178,208,84,0.25)' },
   searchIcon:  { fontSize: 15, marginRight: 8 },
-  searchInput: { flex: 1, color: '#fff', fontSize: 14 },
-  clearX:      { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '700' },
+  searchInput: { flex: 1, color: '#EFF4EE', fontSize: 14 },
+  clearX:      { fontSize: 13, color: '#B2D054', fontWeight: '700' },
 
   // Category chips
-  filterWrap: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee' },
+  filterWrap: { backgroundColor: '#0D1A10', borderBottomWidth: 1, borderBottomColor: 'rgba(178,208,84,0.1)' },
   filterRow:  { paddingHorizontal: 10, paddingVertical: 9, gap: 7 },
   chip:            { alignItems: 'center', paddingVertical: 7, paddingHorizontal: 11,
-                     borderRadius: 20, backgroundColor: '#F0F0F0', flexDirection: 'row', gap: 4 },
+                     borderRadius: 20, backgroundColor: '#060F08',
+                     borderWidth: 1, borderColor: 'rgba(178,208,84,0.2)',
+                     flexDirection: 'row', gap: 4 },
   chipIcon:        { fontSize: 14 },
-  chipLabel:       { fontSize: 11, color: '#555', fontWeight: '600' },
-  chipLabelActive: { color: '#fff' },
+  chipLabel:       { fontSize: 11, color: 'rgba(239,244,238,0.55)', fontWeight: '600' },
+  chipLabelActive: { color: '#071209' },
 
   // Autocomplete dropdown
   suggestBox: {
-    position: 'absolute',
-    left: 12, right: 12,
-    zIndex: 999,
-    elevation: 12,
-    backgroundColor: '#fff',
+    position: 'absolute', left: 12, right: 12,
+    zIndex: 999, elevation: 12,
+    backgroundColor: '#0D1A10',
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(178,208,84,0.2)',
+    shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 }, overflow: 'hidden',
   },
   suggestItem:    { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 14 },
-  suggestDivider: { borderBottomWidth: 1, borderBottomColor: '#f2f2f2' },
+  suggestDivider: { borderBottomWidth: 1, borderBottomColor: 'rgba(178,208,84,0.1)' },
   suggestPin:     { fontSize: 16, marginRight: 10 },
   suggestBody:    { flex: 1 },
-  suggestName:    { fontSize: 13, fontWeight: '700', color: '#1a1a1a', marginBottom: 2 },
-  suggestDesc:    { fontSize: 11, color: '#999' },
+  suggestName:    { fontSize: 13, fontWeight: '700', color: '#EFF4EE', marginBottom: 2 },
+  suggestDesc:    { fontSize: 11, color: 'rgba(239,244,238,0.45)' },
 
   // Error
-  errorBox:  { margin: 12, backgroundColor: '#FFF3CD', borderRadius: 12, padding: 12,
+  errorBox:  { margin: 12, backgroundColor: 'rgba(255,123,92,0.1)', borderRadius: 12, padding: 12,
+               borderWidth: 1, borderColor: 'rgba(255,123,92,0.25)',
                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  errorText: { fontSize: 13, color: '#856404', flex: 1 },
-  retryBtn:  { marginLeft: 10, backgroundColor: '#856404', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  retryTxt:  { color: '#fff', fontSize: 12, fontWeight: '700' },
+  errorText: { fontSize: 13, color: '#FF7B5C', flex: 1 },
+  retryBtn:  { marginLeft: 10, backgroundColor: '#B2D054', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  retryTxt:  { color: '#071209', fontSize: 12, fontWeight: '700' },
 
   // Map
   mapWrap:        { height: Math.round(Dimensions.get('window').height * 0.45), position: 'relative' },
   mapWrapFull:    { flex: 1 },
   map:            { flex: 1 },
-  mapFallback:    { flex: 1, backgroundColor: '#e8f5e9', justifyContent: 'center', alignItems: 'center' },
+  mapFallback:    { flex: 1, backgroundColor: '#0A1A0F', justifyContent: 'center', alignItems: 'center' },
   mapFallbackTxt: { fontSize: 15, color: '#B2D054', fontWeight: '600' },
 
   myLocBtn:  { position: 'absolute', bottom: 56, right: 12, width: 42, height: 42,
-               borderRadius: 21, backgroundColor: '#fff', justifyContent: 'center',
-               alignItems: 'center', elevation: 4,
-               shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 4 },
+               borderRadius: 21, backgroundColor: '#0D1A10',
+               borderWidth: 1, borderColor: 'rgba(178,208,84,0.3)',
+               justifyContent: 'center', alignItems: 'center', elevation: 4,
+               shadowColor: '#B2D054', shadowOpacity: 0.2, shadowRadius: 4 },
   myLocIcon: { fontSize: 20 },
 
-  // "Search this area" button — centered at bottom of map
-  searchAreaWrap: {
-    position: 'absolute',
-    bottom: 12,
-    left: 0, right: 0,
-    alignItems: 'center',
-    zIndex: 5,
-  },
+  searchAreaWrap: { position: 'absolute', bottom: 12, left: 0, right: 0, alignItems: 'center', zIndex: 5 },
   searchAreaBtn: {
-    backgroundColor: '#fff',
-    borderRadius: 22,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
+    backgroundColor: '#0D1A10', borderRadius: 22,
+    paddingHorizontal: 20, paddingVertical: 10,
+    borderWidth: 1, borderColor: 'rgba(178,208,84,0.35)',
+    elevation: 6, shadowColor: '#B2D054', shadowOpacity: 0.2, shadowRadius: 8,
   },
-  searchAreaTxt: { fontSize: 13, fontWeight: '700', color: '#0A1A0F' },
+  searchAreaTxt: { fontSize: 13, fontWeight: '700', color: '#B2D054' },
 
   countPill: { position: 'absolute', top: 10, left: 10,
-               backgroundColor: 'rgba(27,94,32,0.9)', borderRadius: 20,
-               paddingHorizontal: 12, paddingVertical: 5 },
-  countTxt:  { color: '#fff', fontSize: 12, fontWeight: '700' },
+               backgroundColor: 'rgba(10,26,15,0.92)',
+               borderWidth: 1, borderColor: 'rgba(178,208,84,0.3)',
+               borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
+  countTxt:  { color: '#B2D054', fontSize: 12, fontWeight: '700' },
 
   mapLoader:    { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                  backgroundColor: 'rgba(245,247,245,0.85)',
+                  backgroundColor: 'rgba(6,15,8,0.82)',
                   justifyContent: 'center', alignItems: 'center', gap: 10 },
   mapLoaderTxt: { fontSize: 13, color: '#B2D054', fontWeight: '600', textAlign: 'center' },
 
   // Results
-  resultsBar: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#fff',
-                borderBottomWidth: 1, borderBottomColor: '#eee' },
-  resultsTxt: { fontSize: 12, color: '#444', fontWeight: '600' },
+  resultsBar: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#0D1A10',
+                borderBottomWidth: 1, borderBottomColor: 'rgba(178,208,84,0.1)' },
+  resultsTxt: { fontSize: 12, color: 'rgba(239,244,238,0.7)', fontWeight: '600' },
+
+  // Results bar extras
+  scrollHint: { fontSize: 10, color: 'rgba(178,208,84,0.5)', fontWeight: '600', marginLeft: 8 },
 
   // Spot cards
-  list: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 24 },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 12, marginBottom: 8,
+  listContent: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 40 },
+  card: { backgroundColor: '#0D1A10', borderRadius: 16, padding: 12, marginBottom: 8,
           flexDirection: 'row', alignItems: 'center',
-          elevation: 2, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 5,
-          borderWidth: 1, borderColor: 'transparent' },
+          borderWidth: 1, borderColor: 'rgba(178,208,84,0.1)' },
   cardNum:     { width: 30, height: 30, borderRadius: 9, justifyContent: 'center',
                  alignItems: 'center', marginRight: 10, flexShrink: 0 },
   cardNumTxt:  { color: '#fff', fontWeight: '800', fontSize: 13 },
   cardBody:    { flex: 1 },
   cardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 3 },
   cardIcon:    { fontSize: 13 },
-  cardName:    { fontSize: 13, fontWeight: '700', color: '#1a1a1a', flex: 1 },
+  cardName:    { fontSize: 13, fontWeight: '700', color: '#EFF4EE', flex: 1 },
   cardTypeLbl: { fontSize: 10, fontWeight: '700', marginBottom: 2 },
-  cardAddr:    { fontSize: 11, color: '#888', marginBottom: 2 },
-  cardDist:    { fontSize: 11, color: '#666' },
+  cardAddr:    { fontSize: 11, color: 'rgba(239,244,238,0.45)', marginBottom: 2 },
+  cardDist:    { fontSize: 11, color: 'rgba(239,244,238,0.35)' },
   goBtn:       { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, marginLeft: 8 },
   goBtnTxt:    { color: '#fff', fontSize: 12, fontWeight: '800' },
 
   // Empty state
   emptyBox:     { padding: 40, alignItems: 'center' },
   emptyIcon:    { fontSize: 52, marginBottom: 14 },
-  emptyTitle:   { fontSize: 17, fontWeight: '800', color: '#333', marginBottom: 8, textAlign: 'center' },
-  emptySub:     { fontSize: 13, color: '#666', textAlign: 'center', lineHeight: 20 },
+  emptyTitle:   { fontSize: 17, fontWeight: '800', color: '#EFF4EE', marginBottom: 8, textAlign: 'center' },
+  emptySub:     { fontSize: 13, color: 'rgba(239,244,238,0.52)', textAlign: 'center', lineHeight: 20 },
   clearBtn2:    { marginTop: 16, backgroundColor: '#B2D054', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10 },
-  clearBtn2Txt: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  clearBtn2Txt: { color: '#071209', fontSize: 14, fontWeight: '700' },
 });

@@ -34,6 +34,8 @@ import AlertsScreen         from '../screens/alerts/AlertsScreen';
 import ShareScreen          from '../screens/share/ShareScreen';
 import EcoSpotsScreen       from '../screens/ecospots/EcoSpotsScreen';
 import OffsetScreen         from '../screens/offset/OffsetScreen';
+import RejuvenateScreen     from '../screens/offset/RejuvenateScreen';
+import EcoGardenScreen      from '../screens/garden/EcoGardenScreen';
 import SettingsScreen       from '../screens/settings/SettingsScreen';
 import OnboardingScreen     from '../screens/onboarding/OnboardingScreen';
 
@@ -41,7 +43,7 @@ const Stack  = createNativeStackNavigator();
 const Tab    = createBottomTabNavigator();
 export const navRef = createNavigationContainerRef();
 
-// ── Tab metadata ──────────────────────────────────────────────────────────────
+// ── Tab metadata (bottom bar on mobile) ───────────────────────────────────────
 const TABS_META = [
   { name: 'Dashboard',   emoji: '🏠', label: 'Home'        },
   { name: 'LogActivity', emoji: '➕', label: 'Log Activity' },
@@ -51,7 +53,31 @@ const TABS_META = [
   { name: 'Profile',     emoji: '👤', label: 'Profile'     },
 ];
 
-const TAB_NAMES = new Set(TABS_META.map(t => t.name));
+// ── Sidebar nav (web) — tabs + extra stack screens ────────────────────────────
+const SIDEBAR_NAV = [
+  { name: 'Dashboard',    emoji: '🏠', label: 'Home'          },
+  { name: 'LogActivity',  emoji: '➕', label: 'Log Activity'  },
+  { name: 'Reports',      emoji: '📊', label: 'Reports'       },
+  { name: 'Chatbot',      emoji: '🤖', label: 'Eco Coach'     },
+  { name: 'EcoSpots',     emoji: '📍', label: 'Eco Spots'     },
+  { name: 'CarbonOffset', emoji: '🌍', label: 'Carbon Offset' },
+  { name: 'EcoGarden',    emoji: '🌱', label: 'Eco Garden'    },
+  { name: 'Leaderboard',  emoji: '🏆', label: 'Leaderboard'   },
+  { name: 'Profile',      emoji: '👤', label: 'Profile'       },
+];
+
+const TAB_NAMES     = new Set(TABS_META.map(t => t.name));
+const SIDEBAR_NAMES = new Set(SIDEBAR_NAV.map(t => t.name));
+
+// Navigate correctly — tab screens need to go through MainTabs
+const sidebarNavigate = (name) => {
+  if (!navRef.isReady()) return;
+  if (TAB_NAMES.has(name)) {
+    navRef.navigate('MainTabs', { screen: name });
+  } else {
+    navRef.navigate(name);
+  }
+};
 
 // ── Animated tab icon (mobile bottom bar) ────────────────────────────────────
 function AnimatedTabIcon({ emoji, label, focused }) {
@@ -89,7 +115,7 @@ function AnimatedTabIcon({ emoji, label, focused }) {
 const ts = StyleSheet.create({
   wrap:        { alignItems: 'center', paddingTop: 5 },
   emoji:       { fontSize: 20 },
-  label:       { fontSize: 10, marginTop: 2, color: '#6B7A6D', fontWeight: '500' },
+  label:       { fontSize: 10, marginTop: 2, color: 'rgba(178,208,84,0.45)', fontWeight: '500' },
   labelActive: { color: '#B2D054', fontWeight: '800' },
   dot:         { width: 5, height: 5, borderRadius: 3, backgroundColor: '#B2D054', marginTop: 3 },
 });
@@ -102,27 +128,25 @@ function WebSidebar({ activeTab }) {
       colors={theme.bgGrad}
       style={ws.sidebar}
     >
-      {/* Logo */}
-      <View style={ws.logoRow}>
+      {/* Logo — click to go to Dashboard */}
+      <TouchableOpacity style={ws.logoRow} onPress={() => sidebarNavigate('Dashboard')} activeOpacity={0.8}>
         <Image
           source={require('../../assets/carbon-icon.png')}
           style={ws.logoImg}
           resizeMode="contain"
         />
         <Text style={ws.logoTxt}>EcoTrack AI</Text>
-      </View>
+      </TouchableOpacity>
 
       {/* Nav items */}
       <View style={ws.navItems}>
-        {TABS_META.map(meta => {
+        {SIDEBAR_NAV.map(meta => {
           const focused = activeTab === meta.name;
           return (
             <TouchableOpacity
               key={meta.name}
               style={[ws.navItem, focused && ws.navItemActive]}
-              onPress={() => {
-                if (navRef.isReady()) navRef.navigate(meta.name);
-              }}
+              onPress={() => sidebarNavigate(meta.name)}
               activeOpacity={0.75}
             >
               <Text style={ws.navEmoji}>{meta.emoji}</Text>
@@ -139,7 +163,7 @@ function WebSidebar({ activeTab }) {
       <View style={ws.footer}>
         <TouchableOpacity
           style={ws.settingsBtn}
-          onPress={() => { if (navRef.isReady()) navRef.navigate('Settings'); }}
+          onPress={() => sidebarNavigate('Settings')}
           activeOpacity={0.75}
         >
           <Text style={ws.settingsBtnTxt}>⚙️  Settings</Text>
@@ -159,7 +183,12 @@ function CustomTabBar({ state, navigation, showSidebar }) {
   const visibleRoutes = state.routes.filter(r => TABS_META.some(t => t.name === r.name));
 
   return (
-    <View style={ws.bottomBar}>
+    <LinearGradient
+      colors={['#0A1A0F', '#0F2818']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={ws.bottomBar}
+    >
       {visibleRoutes.map(route => {
         const meta    = TABS_META.find(t => t.name === route.name);
         const focused = state.routes[state.index]?.name === route.name;
@@ -174,7 +203,7 @@ function CustomTabBar({ state, navigation, showSidebar }) {
           </TouchableOpacity>
         );
       })}
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -290,8 +319,10 @@ function AppStack({ showSidebar }) {
           } }} />
 
       {[
-        { name: 'Share',  comp: ShareScreen  },
-        { name: 'Offset', comp: OffsetScreen },
+        { name: 'Share',      comp: ShareScreen      },
+        { name: 'Offset',     comp: OffsetScreen     },
+        { name: 'CarbonOffset', comp: RejuvenateScreen  },
+        { name: 'EcoGarden',   comp: EcoGardenScreen   },
       ].map(({ name, comp }) => (
         <Stack.Screen key={name} name={name} component={comp}
           options={{ headerShown: false, cardStyleInterpolator: sheetInterp,
@@ -331,7 +362,7 @@ export default function AppNavigator() {
   const handleStateChange = useCallback(() => {
     if (!navRef.isReady()) return;
     const route = navRef.getCurrentRoute();
-    if (route && TAB_NAMES.has(route.name)) setActiveTab(route.name);
+    if (route && SIDEBAR_NAMES.has(route.name)) setActiveTab(route.name);
   }, []);
 
   if (loading) return <Loading message="Loading EcoTrack AI..." />;
@@ -417,4 +448,25 @@ const ws = StyleSheet.create({
                   paddingHorizontal: 4, borderRadius: 10, marginBottom: 8 },
   settingsBtnTxt:{ fontSize: 14, color: 'rgba(255,255,255,0.45)', fontWeight: '500' },
   footerTxt:    { fontSize: 10, color: 'rgba(255,255,255,0.22)', fontWeight: '500', paddingLeft: 4 },
+
+  // ── Mobile bottom tab bar — Emerald Gradient crystal style ──────────────
+  bottomBar: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderTopWidth: 1.5,
+    borderTopColor: 'rgba(178,208,84,0.22)',
+    paddingTop: 6,
+    paddingBottom: Platform.OS === 'ios' ? 22 : Platform.OS === 'web' ? 10 : 8,
+    shadowColor: '#B2D054',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 18,
+  },
+  bottomTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 2,
+  },
 });

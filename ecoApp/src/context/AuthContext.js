@@ -20,19 +20,41 @@ export const AuthProvider = ({ children }) => {
 
   const loadStoredAuth = async () => {
     try {
-      const storedToken = await storage.getItem('token');
-      if (storedToken) {
-        setToken(storedToken);
-        const res = await getMe();
-        // Guard: if a new login (e.g. Google OAuth redirect) replaced the token
-        // while getMe() was in-flight, don't overwrite with stale old-user data
+      const storedToken  = await storage.getItem('token');
+      const cachedUser   = await storage.getItem('cached_user');
+
+      if (!storedToken) return;
+
+      setToken(storedToken);
+
+      // Show cached user instantly — no waiting for network
+      if (cachedUser) {
+        try { setUser(JSON.parse(cachedUser)); } catch {}
+      }
+
+      // Verify token with backend in background
+      try {
+        const res          = await getMe();
         const currentToken = await storage.getItem('token');
         if (currentToken === storedToken) {
-          setUser(res.data.data);
+          const freshUser = res.data.data;
+          setUser(freshUser);
+          await storage.setItem('cached_user', JSON.stringify(freshUser));
         }
+      } catch (err) {
+        const status = err?.response?.status;
+        if (status === 401) {
+          // Token genuinely expired/invalid → force re-login
+          await storage.removeItem('token');
+          await storage.removeItem('cached_user');
+          setToken(null);
+          setUser(null);
+        }
+        // Any other error (network down, backend starting, timeout)
+        // → keep cached user, don't log them out
       }
     } catch {
-      await storage.removeItem('token');
+      // Storage read failure — ignore, don't log out
     } finally {
       setLoading(false);
     }
@@ -40,6 +62,7 @@ export const AuthProvider = ({ children }) => {
 
   const _saveSession = async (token, user) => {
     await storage.setItem('token', token);
+    await storage.setItem('cached_user', JSON.stringify(user));
     setToken(token);
     setUser(user);
   };
@@ -87,16 +110,18 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    // Always clear local state regardless of backend/storage errors
-    try { await apiLogout(); } catch { /* token may already be expired — that's fine */ }
-    try { await storage.removeItem('token'); } catch { /* ignore storage errors */ }
+    try { await apiLogout(); } catch {}
+    try { await storage.removeItem('token'); } catch {}
+    try { await storage.removeItem('cached_user'); } catch {}
     setToken(null);
-    setUser(null);  // ← triggers AppNavigator to switch to AuthStack (login page)
+    setUser(null);
   };
 
   const refreshUser = async () => {
     const res = await getMe();
-    setUser(res.data.data);
+    const freshUser = res.data.data;
+    setUser(freshUser);
+    await storage.setItem('cached_user', JSON.stringify(freshUser));
   };
 
   return (
