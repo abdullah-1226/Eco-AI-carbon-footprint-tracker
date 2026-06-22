@@ -1,8 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useColorScheme } from 'react-native';
-
-const KEY = '@ecotrack_theme';
+import React, { createContext, useContext } from 'react';
 
 // ── Theme definitions ─────────────────────────────────────────────────────────
 // Dark — Carbon Dark: deep forest-black gradient, optimised luminance contrast
@@ -23,49 +19,11 @@ export const DARK = {
   isDark:     true,
 };
 
-// Light — Clean Eco: off-white background, WCAG AA/AAA compliant
-export const LIGHT = {
-  key:        'light',
-  bgGrad:     ['#F5F7EF', '#EFF5EF', '#E8F2E9'],
-  card:       '#FFFFFF',
-  cardSolid:  '#FFFFFF',
-  border:     'rgba(0,0,0,0.09)',
-  inputBg:    'rgba(0,0,0,0.04)',
-  trackBg:    'rgba(0,0,0,0.10)',
-  pillBg:     'rgba(0,0,0,0.05)',
-  divider:    'rgba(0,0,0,0.07)',
-  text:       '#1A2318',
-  textSub:    '#3D5040',
-  textMuted:  '#6B7A6D',
-  headerText: '#1A2318',
-  isDark:     false,
-};
-
-const ThemeCtx = createContext({
-  theme:       DARK,
-  themeKey:    'dark',
-  setThemeKey: () => {},
-});
+const ThemeCtx = createContext({ theme: DARK, themeKey: 'dark', setThemeKey: () => {} });
 
 export function ThemeProvider({ children }) {
-  const systemScheme       = useColorScheme();
-  const [themeKey, setKey] = useState('dark');
-
-  useEffect(() => {
-    AsyncStorage.getItem(KEY).then(k => { if (k) setKey(k); });
-  }, []);
-
-  const setThemeKey = async (k) => {
-    setKey(k);
-    await AsyncStorage.setItem(KEY, k);
-  };
-
-  const resolved =
-    themeKey === 'auto'  ? (systemScheme === 'light' ? LIGHT : DARK) :
-    themeKey === 'light' ? LIGHT : DARK;
-
   return (
-    <ThemeCtx.Provider value={{ theme: resolved, themeKey, setThemeKey }}>
+    <ThemeCtx.Provider value={{ theme: DARK, themeKey: 'dark', setThemeKey: () => {} }}>
       {children}
     </ThemeCtx.Provider>
   );

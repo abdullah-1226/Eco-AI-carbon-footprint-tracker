@@ -16,6 +16,8 @@ const chatbotRoutes   = require('./routes/chatbotRoutes');
 const mapsRoutes      = require('./routes/mapsRoutes');
 const alertRoutes     = require('./routes/alertRoutes');
 const offsetRoutes    = require('./routes/offsetRoutes');
+const islandRoutes    = require('./routes/islandRoutes');
+const challengeRoutes = require('./routes/challengeRoutes');
 
 const app = express();
 
@@ -28,6 +30,8 @@ app.use('/api/posts',      postRoutes);
 app.use('/api/dashboard',  dashboardRoutes);
 app.use('/api/activities', activityRoutes);
 app.use('/api/chatbot',    chatbotRoutes);
+app.use('/api/island',     islandRoutes);
+app.use('/api/challenges', challengeRoutes);
 app.use('/api/maps',       mapsRoutes);
 app.use('/api/alerts',     alertRoutes);
 app.use('/api/offset',     offsetRoutes);

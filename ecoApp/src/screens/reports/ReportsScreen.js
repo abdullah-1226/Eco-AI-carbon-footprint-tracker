@@ -483,7 +483,6 @@ export default function ReportsScreen({ navigation }) {
       <View style={s.section}>
         <View style={s.sectionHdr}>
           <Text style={s.sectionTitle}>🤖 AI Suggestions</Text>
-          <View style={s.aiBadge}><Text style={s.aiBadgeTxt}>Gemini AI</Text></View>
         </View>
         <Text style={s.aiSub}>Personalised tips based on your data</Text>
 

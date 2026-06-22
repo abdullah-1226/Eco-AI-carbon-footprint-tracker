@@ -219,7 +219,7 @@ export default function DashboardScreen({ navigation }) {
           { text: 'Later', style: 'cancel' },
           {
             text: '🌍 Carbon Offset',
-            onPress: () => navigation.navigate('CarbonOffset', {
+            onPress: () => navigation.jumpTo('CarbonOffset', {
               excessKg:  parseFloat(excess),
               todayKg:   todayCO2val,
               threshold: limit,
@@ -242,7 +242,7 @@ export default function DashboardScreen({ navigation }) {
   }, [navigation, fetchData]);
 
   const goToSpots = (q = '') => {
-    navigation.navigate('EcoSpots', { initialQuery: q });
+    navigation.jumpTo('EcoSpots', { initialQuery: q });
     setSpotSearch('');
   };
 
@@ -679,7 +679,7 @@ export default function DashboardScreen({ navigation }) {
             {/* Carbon Offset CTA — right below Monthly Offset widget */}
             <TouchableOpacity
               style={s.rejuvBtn}
-              onPress={() => navigation.navigate('CarbonOffset', {
+              onPress={() => navigation.jumpTo('CarbonOffset', {
                 excessKg:  !underLimit ? parseFloat(diffKg) : 0,
                 todayKg:   todayCO2,
                 threshold: DAILY_LIMIT,
@@ -707,23 +707,6 @@ export default function DashboardScreen({ navigation }) {
         );
       })()}
 
-      {/* ══════════════════════════════════════════════════════════════════
-          ECO GARDEN TEASER
-      ══════════════════════════════════════════════════════════════════ */}
-      <View style={s.section}>
-        <TouchableOpacity onPress={() => navigation.navigate('EcoGarden')} activeOpacity={0.88}>
-          <LinearGradient colors={['#071A0F', '#0A2012']} style={s.gardenTeaser}>
-            <View style={s.gardenTeaserLeft}>
-              <Text style={s.gardenTeaserEmoji}>🌍</Text>
-              <View>
-                <Text style={s.gardenTeaserTitle}>Your Eco Planet</Text>
-                <Text style={s.gardenTeaserSub}>Your eco actions grow a living world</Text>
-              </View>
-            </View>
-            <Text style={s.gardenTeaserArrow}>→</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
 
       {/* ══════════════════════════════════════════════════════════════════
           TIP OF THE DAY

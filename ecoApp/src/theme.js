@@ -1,4 +1,4 @@
-import { MD3LightTheme } from 'react-native-paper';
+import { MD3DarkTheme } from 'react-native-paper';
 
 // EcoTrack AI — FYP Carbon Footprint Tracker
 // Eco-green color palette
@@ -22,31 +22,33 @@ export const Colors = {
   info:         '#0288D1',
   infoLight:    '#E1F5FE',
 
-  // Neutral
+  // Neutral — dark theme
   white:        '#FFFFFF',
-  background:   '#F5F7EF',
-  surface:      '#FFFFFF',
+  background:   '#060F08',
+  surface:      '#0D1A10',
   border:       'rgba(178,208,84,0.30)',
   muted:        '#6B7A6D',
-  text:         '#1A2318',
-  textMuted:    '#6B7A6D',
+  text:         '#EFF4EE',
+  textMuted:    'rgba(239,244,238,0.5)',
   dark:         '#1A2318',
-  light:        '#F5F7EF',
+  light:        '#EFF4EE',
 };
 
 export const Theme = {
-  ...MD3LightTheme,
+  ...MD3DarkTheme,
   colors: {
-    ...MD3LightTheme.colors,
-    primary:        Colors.primary,
-    secondary:      Colors.secondary,
-    background:     Colors.background,
-    surface:        Colors.surface,
-    error:          Colors.danger,
-    onPrimary:      Colors.white,
-    onBackground:   Colors.text,
-    onSurface:      Colors.text,
-    outline:        Colors.border,
+    ...MD3DarkTheme.colors,
+    primary:          Colors.primary,
+    secondary:        Colors.secondary,
+    background:       '#060F08',
+    surface:          '#0D1A10',
+    surfaceVariant:   '#0A1608',
+    error:            Colors.danger,
+    onPrimary:        '#071209',
+    onBackground:     '#EFF4EE',
+    onSurface:        '#EFF4EE',
+    onSurfaceVariant: 'rgba(239,244,238,0.7)',
+    outline:          'rgba(178,208,84,0.30)',
   },
 };
 

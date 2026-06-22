@@ -92,7 +92,8 @@ export default function LoginScreen({ navigation, route }) {
       const err = p.get('googleError');
       if (err) { setError(decodeURIComponent(err)); window.history.replaceState({}, '', FRONTEND_URL); }
       else if (tok && usr) {
-        loginWithGoogleToken(tok, JSON.parse(decodeURIComponent(usr))).catch(() => setError('Google sign-in failed.'));
+        let parsedUser; try { parsedUser = JSON.parse(decodeURIComponent(usr)); } catch { setError('Google sign-in failed.'); return; }
+        loginWithGoogleToken(tok, parsedUser).catch(() => setError('Google sign-in failed.'));
         window.history.replaceState({}, '', FRONTEND_URL);
       }
     }
@@ -113,7 +114,7 @@ export default function LoginScreen({ navigation, route }) {
           const tok = p.get('googleToken');
           const usr = p.get('googleUser');
           if (err) setError(decodeURIComponent(err));
-          else if (tok && usr) await loginWithGoogleToken(tok, JSON.parse(decodeURIComponent(usr)));
+          else if (tok && usr) { let pu; try { pu = JSON.parse(decodeURIComponent(usr)); } catch { setError('Google sign-in failed.'); return; } await loginWithGoogleToken(tok, pu); }
         } else if (result.type !== 'cancel') {
           setError('Google sign-in was cancelled.');
         }

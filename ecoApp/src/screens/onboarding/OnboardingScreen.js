@@ -58,7 +58,7 @@ const WARN_COLORS = {
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function OnboardingScreen() {
-  const { refreshUser } = useAuth();
+  const { refreshUser, updateUser } = useAuth();
   const [selected,     setSelected]     = useState('rec');
   const [customKg,     setCustomKg]     = useState('');
   const [saving,       setSaving]       = useState(false);
@@ -81,9 +81,19 @@ export default function OnboardingScreen() {
         dailyThreshold:    finalKg,
         onboardingComplete: true,
       });
-      await refreshUser();   // re-fetches user → onboardingComplete = true → navigates to app
+      // Refresh user in background — if it fails, update local state manually
+      // so navigation to the main app still happens
+      try {
+        await refreshUser();
+      } catch {
+        updateUser({ onboardingComplete: true, dailyThreshold: finalKg });
+      }
     } catch (err) {
-      showAlert('Error', err.response?.data?.error || 'Could not save. Please try again.');
+      const msg = err.response?.data?.error
+        || (err.code === 'ECONNABORTED' ? 'Request timed out. Is the server running?' : null)
+        || (!err.response ? 'Cannot reach server. Make sure the backend is running on port 3000.' : null)
+        || 'Could not save. Please try again.';
+      showAlert('Error', msg);
     } finally {
       setSaving(false);
     }

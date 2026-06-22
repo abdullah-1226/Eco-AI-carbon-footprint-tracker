@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
 
       // Show cached user instantly — no waiting for network
       if (cachedUser) {
-        try { setUser(JSON.parse(cachedUser)); } catch {}
+        try { setUser(_normalizeUser(JSON.parse(cachedUser))); } catch {}
       }
 
       // Verify token with backend in background
@@ -37,7 +37,7 @@ export const AuthProvider = ({ children }) => {
         const res          = await getMe();
         const currentToken = await storage.getItem('token');
         if (currentToken === storedToken) {
-          const freshUser = res.data.data;
+          const freshUser = _normalizeUser(res.data.data);
           setUser(freshUser);
           await storage.setItem('cached_user', JSON.stringify(freshUser));
         }
@@ -60,11 +60,14 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const _normalizeUser = (u) => u ? { ...u, id: u.id || u._id?.toString(), _id: u._id || u.id } : u;
+
   const _saveSession = async (token, user) => {
+    const normalized = _normalizeUser(user);
     await storage.setItem('token', token);
-    await storage.setItem('cached_user', JSON.stringify(user));
+    await storage.setItem('cached_user', JSON.stringify(normalized));
     setToken(token);
-    setUser(user);
+    setUser(normalized);
   };
 
   const login = async (email, password) => {
@@ -96,16 +99,16 @@ export const AuthProvider = ({ children }) => {
   // Universal — backend OAuth flow returns token + user directly
   // Saves token first, then fetches fresh user data from MongoDB
   const loginWithGoogleToken = async (token, user) => {
-    // Save token immediately so getMe() interceptor picks it up
     await storage.setItem('token', token);
     setToken(token);
-    setUser(user); // show immediately from URL params for instant UX
-    // Then fetch fresh, authoritative data from MongoDB
+    setUser(_normalizeUser(user));
     try {
       const res = await getMe();
-      setUser(res.data.data);
+      const fresh = _normalizeUser(res.data.data);
+      setUser(fresh);
+      await storage.setItem('cached_user', JSON.stringify(fresh));
     } catch {
-      // If getMe fails, URL-param user is still set — not a critical error
+      await storage.setItem('cached_user', JSON.stringify(_normalizeUser(user)));
     }
   };
 
@@ -119,13 +122,22 @@ export const AuthProvider = ({ children }) => {
 
   const refreshUser = async () => {
     const res = await getMe();
-    const freshUser = res.data.data;
+    const freshUser = _normalizeUser(res.data.data);
     setUser(freshUser);
     await storage.setItem('cached_user', JSON.stringify(freshUser));
   };
 
+  // Merge partial fields into the current user without a network call
+  const updateUser = (fields) => {
+    setUser((prev) => {
+      const next = { ...prev, ...fields };
+      storage.setItem('cached_user', JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, loginWithGoogle, loginWithGoogleUserInfo, loginWithGoogleToken, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, loginWithGoogle, loginWithGoogleUserInfo, loginWithGoogleToken, logout, refreshUser, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -38,7 +38,7 @@ export default function RegisterScreen({ navigation }) {
   // Real-time email duplicate check (debounced 600ms)
   useEffect(() => {
     setEmailError('');
-    if (!email || !/\S+@\S+\.\S+/.test(email)) return;
+    if (!email || !/\S+@\S+\.\S+/.test(email)) { setEmailChecking(false); return; }
     setEmailChecking(true);
     if (emailDebounceRef.current) clearTimeout(emailDebounceRef.current);
     emailDebounceRef.current = setTimeout(async () => {

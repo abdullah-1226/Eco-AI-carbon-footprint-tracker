@@ -41,11 +41,41 @@ const EF = {
         coal_heating: { factor: 0.341, unit: 'kWh', label: 'Coal Heating' },
     },
     shopping: {
-        clothing:          { factor: 25,  unit: 'item', label: 'Clothing' },
-        electronics_small: { factor: 70,  unit: 'item', label: 'Electronics (Small)' },
-        electronics_large: { factor: 300, unit: 'item', label: 'Electronics (Large)' },
-        furniture:         { factor: 120, unit: 'item', label: 'Furniture' },
-        grocery_bag:       { factor: 5,   unit: 'bag',  label: 'Grocery Bag' },
+        // Legacy generic keys
+        clothing:           { factor: 25,  unit: 'item', label: 'Clothing' },
+        furniture:          { factor: 120, unit: 'item', label: 'Furniture' },
+        grocery_bag:        { factor: 5,   unit: 'bag',  label: 'Grocery Bag' },
+
+        // Men's clothing
+        mens_tshirt:        { factor: 5,   unit: 'item', label: "Men's T-Shirt / Polo" },
+        mens_shirt:         { factor: 8,   unit: 'item', label: "Men's Shirt / Formal" },
+        mens_pants:         { factor: 33,  unit: 'item', label: "Men's Jeans / Trousers" },
+        mens_jacket:        { factor: 25,  unit: 'item', label: "Men's Jacket / Hoodie" },
+        mens_shoes:         { factor: 18,  unit: 'item', label: "Men's Shoes / Sneakers" },
+
+        // Women's clothing
+        womens_top:         { factor: 4.5, unit: 'item', label: "Women's T-Shirt / Blouse" },
+        womens_dress:       { factor: 22,  unit: 'item', label: 'Dress / Skirt' },
+        womens_pants:       { factor: 28,  unit: 'item', label: "Women's Jeans / Trousers" },
+        womens_coat:        { factor: 50,  unit: 'item', label: "Women's Coat / Jacket" },
+        womens_shoes:       { factor: 16,  unit: 'item', label: "Women's Shoes / Heels" },
+
+        // Kids' & Other
+        kids_clothing:      { factor: 3,   unit: 'item', label: "Kids' Clothing" },
+        underwear_socks:    { factor: 2.5, unit: 'item', label: 'Underwear / Socks' },
+        accessories:        { factor: 10,  unit: 'item', label: 'Bag / Belt / Scarf' },
+
+        // Electronics
+        electronics_small:  { factor: 70,  unit: 'item', label: 'Phone / Tablet' },
+        electronics_large:  { factor: 300, unit: 'item', label: 'Laptop / TV / PC' },
+
+        // Furniture
+        furniture_sofa:     { factor: 150, unit: 'item', label: 'Sofa / Couch' },
+        furniture_bed:      { factor: 120, unit: 'item', label: 'Bed / Mattress' },
+        furniture_table:    { factor: 200, unit: 'item', label: 'Table & Chairs' },
+        furniture_wardrobe: { factor: 100, unit: 'item', label: 'Wardrobe / Cabinet' },
+        furniture_shelf:    { factor: 50,  unit: 'item', label: 'Shelf / Bookcase' },
+        furniture_desk:     { factor: 80,  unit: 'item', label: 'Desk / Office Chair' },
     },
     custom: {
         custom_activity: { factor: 1.0, unit: 'kg CO₂', label: 'Custom Activity' },

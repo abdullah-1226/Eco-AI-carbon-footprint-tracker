@@ -33,10 +33,12 @@ const sendTokenResponse = (user, statusCode, res) => {
         token,
         user: {
             id:                 user._id,
+            _id:                user._id,
             name:               user.name,
             email:              user.email,
             role:               user.role,
             avatar:             user.avatar,
+            coverPhoto:         user.coverPhoto,
             provider:           user.provider,
             onboardingComplete: user.onboardingComplete,
             dailyThreshold:     user.dailyThreshold,
@@ -314,7 +316,26 @@ exports.googleOAuthCallback = async (req, res) => {
 exports.getMe = async (req, res, next) => {
     try {
         const user = await User.findById(req.user.id);
-        res.status(200).json({ success: true, data: user });
+        if (!user) return res.status(401).json({ success: false, error: 'User not found' });
+        res.status(200).json({
+            success: true,
+            data: {
+                id:                 user._id,
+                _id:                user._id,
+                name:               user.name,
+                email:              user.email,
+                role:               user.role,
+                avatar:             user.avatar,
+                coverPhoto:         user.coverPhoto,
+                provider:           user.provider,
+                onboardingComplete: user.onboardingComplete,
+                dailyThreshold:     user.dailyThreshold,
+                age:                user.age,
+                gender:             user.gender,
+                bio:                user.bio,
+                createdAt:          user.createdAt,
+            }
+        });
     } catch (error) {
         next(error);
     }

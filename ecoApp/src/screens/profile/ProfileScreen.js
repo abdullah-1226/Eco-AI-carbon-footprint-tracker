@@ -4,13 +4,13 @@ import {
   TouchableOpacity, Image, Platform, Animated, Modal,
   ActivityIndicator,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { TextInput, Button, Divider } from 'react-native-paper';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { updateDetails, updatePassword } from '../../api/api';
 import { useAuth } from '../../context/AuthContext';
 import { showAlert } from '../../utils/crossAlert';
-import ScreenTransition from '../../components/ScreenTransition';
 import PhotoCropModal from '../../components/PhotoCropModal';
 import { Colors, Radii } from '../../theme';
 
@@ -161,17 +161,15 @@ export default function ProfileScreen({ navigation }) {
 
   // photos — stored locally in AsyncStorage
   const [avatarUri, setAvatarUri] = useState(null);
-  const [coverUri,  setCoverUri]  = useState(null);
   const [photoLoading, setPhotoLoading] = useState(false);
 
   // crop modal state
   const [cropVisible, setCropVisible] = useState(false);
   const [cropRawUri,  setCropRawUri]  = useState(null);
-  const [cropMode,    setCropMode]    = useState('avatar'); // 'avatar' | 'cover'
+  const [cropMode,    setCropMode]    = useState('avatar');
 
-  // bottom-sheet visibility — separate sheets per photo type
+  // bottom-sheet visibility
   const [avatarSheetOpen, setAvatarSheetOpen] = useState(false);
-  const [coverSheetOpen,  setCoverSheetOpen]  = useState(false);
 
   // password
   const [currentPass, setCurrentPass] = useState('');
@@ -181,17 +179,10 @@ export default function ProfileScreen({ navigation }) {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [passLoading,    setPassLoading]    = useState(false);
 
-  // load stored photos — keyed per user so accounts don't share photos
+  // load avatar — keyed per user so accounts don't share photos
   useEffect(() => {
     if (!user?._id) return;
-    (async () => {
-      const [a, c] = await Promise.all([
-        AsyncStorage.getItem(avatarKey(user._id)),
-        AsyncStorage.getItem(coverKey(user._id)),
-      ]);
-      if (a) setAvatarUri(a);
-      if (c) setCoverUri(c);
-    })();
+    AsyncStorage.getItem(avatarKey(user._id)).then(a => { if (a) setAvatarUri(a); });
   }, [user?._id]);
 
   // ── Avatar actions ──────────────────────────────────────────────────────
@@ -211,40 +202,15 @@ export default function ProfileScreen({ navigation }) {
   // ── Crop done callbacks ──────────────────────────────────────────────────
   const handleCropDone = async (croppedUri) => {
     setCropVisible(false);
-    if (cropMode === 'avatar') {
-      setAvatarUri(croppedUri);
-      await AsyncStorage.setItem(avatarKey(user._id), croppedUri);
-    } else {
-      setCoverUri(croppedUri);
-      await AsyncStorage.setItem(coverKey(user._id), croppedUri);
-    }
+    setAvatarUri(croppedUri);
+    await AsyncStorage.setItem(avatarKey(user._id), croppedUri);
   };
   const handleCropCancel = () => setCropVisible(false);
 
-  // ── Cover actions ───────────────────────────────────────────────────────
-  const doChangeCover = async () => {
-    const uri = await pickImage();
-    if (uri) {
-      setCropRawUri(uri);
-      setCropMode('cover');
-      setCropVisible(true);
-    }
-  };
-  const doRemoveCover = async () => {
-    setCoverUri(null);
-    await AsyncStorage.removeItem(coverKey(user._id));
-  };
-
-  // ── Sheet options — profile photo only ─────────────────────────────────
+  // ── Sheet options ─────────────────────────────────────────────────────
   const avatarOptions = [
     { icon: '📷', label: avatarUri ? 'Update Profile Photo' : 'Add Profile Photo', onPress: doChangeAvatar },
     avatarUri && { icon: '🗑️', label: 'Remove Profile Photo', onPress: doRemoveAvatar, danger: true },
-  ].filter(Boolean);
-
-  // ── Sheet options — cover photo only ────────────────────────────────────
-  const coverOptions = [
-    { icon: '🖼️', label: coverUri ? 'Update Cover Photo' : 'Add Cover Photo', onPress: doChangeCover },
-    coverUri && { icon: '🗑️', label: 'Remove Cover Photo', onPress: doRemoveCover, danger: true },
   ].filter(Boolean);
 
   // ── Save profile ────────────────────────────────────────────────────────
@@ -288,7 +254,7 @@ export default function ProfileScreen({ navigation }) {
   const genderLabel = GENDER_OPTIONS.find(g => g.value === user?.gender)?.label;
 
   return (
-    <ScreenTransition>
+    <View style={{ flex: 1, backgroundColor: '#060F08' }}>
 
       {/* ── Photo crop editor ──────────────────────────────────────── */}
       <PhotoCropModal
@@ -306,51 +272,19 @@ export default function ProfileScreen({ navigation }) {
         title="Profile Photo"
         options={avatarOptions}
       />
-      {/* ── Cover photo sheet ───────────────────────────────────────── */}
-      <BottomSheet
-        visible={coverSheetOpen}
-        onClose={() => setCoverSheetOpen(false)}
-        title="Cover Photo"
-        options={coverOptions}
-      />
 
       <KeyboardAvoidingView style={st.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView style={st.root} showsVerticalScrollIndicator={false}>
 
           {/* ════════════════════════════════════════════════════════
-              COVER PHOTO HERO
+              PROFILE HEADER
           ════════════════════════════════════════════════════════ */}
-          <View style={st.coverWrap}>
-            {/* Cover image or placeholder */}
-            {coverUri ? (
-              <Image source={{ uri: coverUri }} style={st.coverImg} resizeMode="cover" />
-            ) : (
-              <View style={st.coverEmpty}>
-                <Text style={st.coverEmptyIcon}>🌍</Text>
-                <Text style={st.coverEmptyTxt}>Tap ⋯ to add a cover photo</Text>
-              </View>
-            )}
-
-            {/* Loading spinner over cover */}
+          <LinearGradient colors={['#0A1A0F', '#0C1B12']} style={st.profileHeader}>
             {photoLoading && (
-              <View style={st.coverSpinner}>
-                <ActivityIndicator color="#fff" size="large" />
-              </View>
+              <ActivityIndicator color="#B2D054" size="small" style={{ marginBottom: 8 }} />
             )}
-
-            {/* ⋯ three-dots — top right — cover photo options only */}
-            <TouchableOpacity
-              style={st.dotsBtn}
-              onPress={() => setCoverSheetOpen(true)}
-              activeOpacity={0.85}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Text style={st.dotsBtnTxt}>•••</Text>
-            </TouchableOpacity>
-
-            {/* Avatar — overlapping bottom of cover */}
-            <View style={st.avatarAnchor}>
-              {/* Avatar circle — not tappable directly */}
+            {/* Avatar */}
+            <TouchableOpacity onPress={() => setAvatarSheetOpen(true)} activeOpacity={0.85}>
               <View style={st.avatarRing}>
                 {avatarUri ? (
                   <Image source={{ uri: avatarUri }} style={st.avatarImg} resizeMode="cover" />
@@ -359,19 +293,12 @@ export default function ProfileScreen({ navigation }) {
                     <Text style={st.avatarInitials}>{initials(user?.name)}</Text>
                   </View>
                 )}
+                <View style={st.camWidget}>
+                  <Text style={st.camWidgetIcon}>📸</Text>
+                </View>
               </View>
-
-              {/* Camera widget — always shown beside avatar, opens profile sheet */}
-              <TouchableOpacity
-                style={st.camWidget}
-                onPress={() => setAvatarSheetOpen(true)}
-                activeOpacity={0.8}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              >
-                <Text style={st.camWidgetIcon}>📸</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+            </TouchableOpacity>
+          </LinearGradient>
 
           {/* ════════════════════════════════════════════════════════
               NAME + META PILLS  (leaves space for avatar overlap)
@@ -399,25 +326,25 @@ export default function ProfileScreen({ navigation }) {
             <Text style={st.lbl}>Full Name</Text>
             <TextInput mode="outlined" value={name} onChangeText={setName} placeholder="Your full name"
               left={<TextInput.Icon icon="account" color={Colors.textMuted} />}
-              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
+              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurface: "#EFF4EE", onSurfaceVariant: "rgba(239,244,238,0.7)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Text style={st.lbl}>Email</Text>
             <TextInput mode="outlined" value={email} onChangeText={setEmail} placeholder="your@email.com"
               keyboardType="email-address" autoCapitalize="none"
               left={<TextInput.Icon icon="email" color={Colors.textMuted} />}
-              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
+              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurface: "#EFF4EE", onSurfaceVariant: "rgba(239,244,238,0.7)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Text style={st.lbl}>Bio <Text style={st.lblHint}>({bio.length}/200)</Text></Text>
             <TextInput mode="outlined" value={bio} onChangeText={setBio}
               placeholder="Tell others about yourself…" multiline numberOfLines={3} maxLength={200}
               left={<TextInput.Icon icon="text" color={Colors.textMuted} />}
-              style={[st.input, { minHeight: 80 }]} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
+              style={[st.input, { minHeight: 80 }]} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurface: "#EFF4EE", onSurfaceVariant: "rgba(239,244,238,0.7)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Text style={st.lbl}>Age</Text>
             <TextInput mode="outlined" value={age} onChangeText={setAge}
               placeholder="Your age" keyboardType="numeric" maxLength={3}
               left={<TextInput.Icon icon="cake" color={Colors.textMuted} />}
-              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
+              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurface: "#EFF4EE", onSurfaceVariant: "rgba(239,244,238,0.7)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Text style={st.lbl}>Gender</Text>
             <View style={st.gGrid}>
@@ -446,14 +373,14 @@ export default function ProfileScreen({ navigation }) {
               placeholder="Current password" secureTextEntry={!showCurrent}
               left={<TextInput.Icon icon="lock" color={Colors.textMuted} />}
               right={<TextInput.Icon icon={showCurrent ? 'eye-off' : 'eye'} onPress={() => setShowCurrent(!showCurrent)} color={Colors.textMuted} />}
-              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
+              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurface: "#EFF4EE", onSurfaceVariant: "rgba(239,244,238,0.7)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Text style={st.lbl}>New Password</Text>
             <TextInput mode="outlined" value={newPass} onChangeText={setNewPass}
               placeholder="Min. 6 characters" secureTextEntry={!showNew}
               left={<TextInput.Icon icon="lock-reset" color={Colors.textMuted} />}
               right={<TextInput.Icon icon={showNew ? 'eye-off' : 'eye'} onPress={() => setShowNew(!showNew)} color={Colors.textMuted} />}
-              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurfaceVariant: "rgba(239,244,238,0.6)", placeholder: "rgba(239,244,238,0.35)" } }} />
+              style={st.input} outlineColor="rgba(178,208,84,0.25)" activeOutlineColor="#B2D054" theme={{ roundness: Radii.md, colors: { background: "#0A1608", onSurface: "#EFF4EE", onSurfaceVariant: "rgba(239,244,238,0.7)", placeholder: "rgba(239,244,238,0.35)" } }} />
 
             <Button mode="contained" icon="lock-check" onPress={handleUpdatePassword}
               loading={passLoading} disabled={passLoading}
@@ -477,7 +404,7 @@ export default function ProfileScreen({ navigation }) {
           <View style={{ height: 48 }} />
         </ScrollView>
       </KeyboardAvoidingView>
-    </ScreenTransition>
+    </View>
   );
 }
 
@@ -486,56 +413,43 @@ const st = StyleSheet.create({
   flex: { flex: 1 },
   root: { flex: 1, backgroundColor: '#060F08' },
 
-  // Cover hero
-  coverWrap:     { width: '100%', height: COVER_H, backgroundColor: '#0A1A0F', position: 'relative' },
-  coverImg:      { ...StyleSheet.absoluteFillObject },
-  coverEmpty:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0A1A0F' },
-  coverEmptyIcon:{ fontSize: 36, marginBottom: 6 },
-  coverEmptyTxt: { fontSize: 13, color: 'rgba(239,244,238,0.52)', fontWeight: '600' },
-  coverSpinner:  { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)',
-                   alignItems: 'center', justifyContent: 'center', zIndex: 5 },
-
-  dotsBtn:    {
-    position: 'absolute', top: 14, right: 14, zIndex: 20,
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.52)',
-    borderWidth: 1, borderColor: 'rgba(178,208,84,0.4)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  dotsBtnTxt: { color: '#B2D054', fontSize: 14, fontWeight: '900', letterSpacing: 1.5, lineHeight: 18 },
-
-  avatarAnchor: {
-    position: 'absolute', bottom: -(AVATAR_SZ / 2), left: 18, zIndex: 15,
-    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
+  // Profile header (replaces cover photo)
+  profileHeader: {
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 24,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(178,208,84,0.12)',
   },
   avatarRing: {
     width: AVATAR_SZ, height: AVATAR_SZ, borderRadius: AVATAR_SZ / 2,
-    borderWidth: 3, borderColor: '#B2D054', overflow: 'hidden',
-    shadowColor: '#B2D054', shadowOpacity: 0.35, shadowRadius: 8, elevation: 8,
+    borderWidth: 3, borderColor: '#B2D054', overflow: 'visible',
+    shadowColor: '#B2D054', shadowOpacity: 0.4, shadowRadius: 12, elevation: 10,
   },
-  avatarImg:      { width: '100%', height: '100%' },
-  avatarFallback: { flex: 1, backgroundColor: '#0D1A10', alignItems: 'center', justifyContent: 'center',
+  avatarImg:      { width: AVATAR_SZ, height: AVATAR_SZ, borderRadius: AVATAR_SZ / 2 },
+  avatarFallback: { width: AVATAR_SZ, height: AVATAR_SZ, borderRadius: AVATAR_SZ / 2,
+    backgroundColor: '#0D1A10', alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(178,208,84,0.3)' },
   avatarInitials: { fontSize: 30, fontWeight: '900', color: '#B2D054' },
 
   camWidget: {
-    width: 34, height: 34, borderRadius: 17,
+    position: 'absolute', bottom: 0, right: -4,
+    width: 30, height: 30, borderRadius: 15,
     backgroundColor: '#0C1B12',
     borderWidth: 2, borderColor: '#B2D054',
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#B2D054', shadowOpacity: 0.3, shadowRadius: 6, elevation: 6,
-    marginBottom: 4,
   },
-  camWidgetIcon: { fontSize: 15 },
+  camWidgetIcon: { fontSize: 13 },
 
   nameBlock: {
-    marginTop: AVATAR_SZ / 2 + 14, paddingHorizontal: 18, paddingBottom: 16,
-    backgroundColor: '#060F08',
+    paddingHorizontal: 18, paddingVertical: 14,
+    backgroundColor: '#060F08', alignItems: 'center',
     borderBottomWidth: 1, borderBottomColor: 'rgba(178,208,84,0.1)',
   },
-  nameText:  { fontSize: 20, fontWeight: '900', color: '#EFF4EE' },
-  emailText: { fontSize: 13, color: 'rgba(239,244,238,0.52)', marginTop: 3, marginBottom: 10 },
-  metaRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  nameText:  { fontSize: 22, fontWeight: '900', color: '#EFF4EE', textAlign: 'center' },
+  emailText: { fontSize: 13, color: 'rgba(239,244,238,0.6)', marginTop: 4, marginBottom: 10, textAlign: 'center' },
+  metaRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
   pill:      { backgroundColor: 'rgba(178,208,84,0.10)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
                borderWidth: 1, borderColor: 'rgba(178,208,84,0.25)' },
   pillRole:  { backgroundColor: 'rgba(82,199,122,0.1)', borderColor: 'rgba(82,199,122,0.25)' },

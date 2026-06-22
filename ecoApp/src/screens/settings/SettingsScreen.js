@@ -36,11 +36,6 @@ function limitWarning(kg) {
   return                         { color: '#F43F5E', text: `🔴 Very high — global average is 10 kg/day` };
 }
 
-const THEMES = [
-  { key: 'dark',  label: 'Dark Glass', icon: '🌑', desc: 'Dark background with glass card effects' },
-  { key: 'light', label: 'Light Mode', icon: '☀️', desc: 'Clean white background, easy on the eyes' },
-  { key: 'auto',  label: 'System',     icon: '📱', desc: 'Follows your device dark/light setting' },
-];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 async function checkNotifPermission() {
@@ -125,8 +120,8 @@ function Divider({ s }) {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function SettingsScreen({ navigation }) {
-  const { themeKey, setThemeKey, theme: appTheme } = useAppTheme();
-  const { user, refreshUser } = useAuth();
+  const { theme: appTheme } = useAppTheme();
+  const { user, refreshUser, updateUser } = useAuth();
   const C = useMemo(() => buildC(appTheme), [appTheme]);
   const s = useMemo(() => makeStyles(C), [C]);
   const [notifEnabled, setNotifEnabled] = useState(false);
@@ -165,11 +160,15 @@ export default function SettingsScreen({ navigation }) {
     setLimitSaving(true);
     try {
       await updateDetails({ dailyThreshold: finalKg });
-      await refreshUser();
+      try { await refreshUser(); } catch { updateUser({ dailyThreshold: finalKg }); }
       setLimitOpen(false);
       Alert.alert('Saved!', `Your daily carbon limit is now ${finalKg} kg CO₂.`);
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.error || 'Could not save. Please try again.');
+      const msg = err.response?.data?.error
+        || (err.code === 'ECONNABORTED' ? 'Request timed out. Is the server running?' : null)
+        || (!err.response ? 'Cannot reach server. Make sure the backend is running on port 3000.' : null)
+        || 'Could not save. Please try again.';
+      Alert.alert('Error', msg);
     } finally {
       setLimitSaving(false);
     }
@@ -238,10 +237,6 @@ export default function SettingsScreen({ navigation }) {
     finally { setSharing(false); }
   }, [sharing]);
 
-  // ── Theme selection — updates ThemeContext live ────────────────────────────
-  const handleTheme = useCallback(async (key) => {
-    await setThemeKey(key);
-  }, [setThemeKey]);
 
   const notifSubLabel = () => {
     if (notifStatus === 'denied')      return 'Blocked — tap to open device settings';
@@ -411,36 +406,6 @@ export default function SettingsScreen({ navigation }) {
         />
       </Section>
 
-      {/* ── Theme ──────────────────────────────────────────────────────── */}
-      <Section title="🎨 Theme" s={s}>
-        {THEMES.map((t, i) => {
-          const active = themeKey === t.key;
-          return (
-            <View key={t.key}>
-              {i > 0 && <Divider s={s} />}
-              <TouchableOpacity
-                style={[s.row, active && s.rowActive]}
-                onPress={() => handleTheme(t.key)}
-                activeOpacity={0.7}
-              >
-                <View style={[s.rowIcon, { backgroundColor: active ? 'rgba(178,208,84,0.14)' : C.pillBg }]}>
-                  <Text style={s.rowIconTxt}>{t.icon}</Text>
-                </View>
-                <View style={s.rowBody}>
-                  <Text style={[s.rowLabel, active && { color: MINT }]}>{t.label}</Text>
-                  <Text style={s.rowSub}>{t.desc}</Text>
-                </View>
-                <View style={[s.radioRing, active && s.radioRingActive]}>
-                  {active && <View style={s.radioDot} />}
-                </View>
-              </TouchableOpacity>
-            </View>
-          );
-        })}
-        <Text style={s.themeNote}>
-          ✦ Theme preference is saved — changes apply instantly
-        </Text>
-      </Section>
 
       {/* ── About ──────────────────────────────────────────────────────── */}
       <Section title="ℹ️ About" s={s}>

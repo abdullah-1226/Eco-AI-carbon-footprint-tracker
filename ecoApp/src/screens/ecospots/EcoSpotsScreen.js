@@ -6,7 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { WebView } from 'react-native-webview';
-import { getRealNearbyPlaces, getAutocomplete } from '../../api/api';
+import { getRealNearbyPlaces, getAutocomplete, textSearchPlaces } from '../../api/api';
 import { showAlert } from '../../utils/crossAlert';
 import BackButton from '../../components/BackButton';
 
@@ -345,9 +345,26 @@ export default function EcoSpotsScreen() {
     fetchPlaces(type, null, '');
   };
 
+  // ── Keyword → category mapping (auto-switch chip when user types eco keywords)
+  const KEYWORD_CATEGORY = [
+    { keys: ['ev', 'electric', 'charge', 'charging', 'charger', 'چارج'],  type: 'ev_charging' },
+    { keys: ['recycle', 'recycling', 'waste', 'bin', 'disposal'],          type: 'recycling'   },
+    { keys: ['organic', 'natural', 'bio', 'fresh', 'farm'],                type: 'organic'     },
+    { keys: ['nursery', 'plant', 'seedling', 'garden', 'flower'],          type: 'nursery'     },
+    { keys: ['park', 'forest', 'nature', 'green', 'trail'],                type: 'park'        },
+  ];
+
+  const detectCategory = (text) => {
+    const lower = text.toLowerCase();
+    for (const { keys, type } of KEYWORD_CATEGORY) {
+      if (keys.some(k => lower.includes(k))) return type;
+    }
+    return null;
+  };
+
   // ── Search — dual mode:
   //    1. Show place autocomplete suggestions (fly map to selected city/area)
-  //    2. Filter loaded spots by keyword as fallback
+  //    2. Detect eco keywords and auto-switch category chip
   const handleSearchChange = (text) => {
     setSearchQuery(text);
 
@@ -358,6 +375,17 @@ export default function EcoSpotsScreen() {
       setSuggestions([]);
       setShowSuggestions(false);
       fetchPlaces(activeType, null, '');
+      return;
+    }
+
+    // Auto-detect eco category from keywords and switch chip
+    const detectedType = detectCategory(text);
+    if (detectedType && detectedType !== activeType) {
+      setActiveType(detectedType);
+      setSearchQuery('');
+      setSuggestions([]);
+      setShowSuggestions(false);
+      fetchPlaces(detectedType, null, '');
       return;
     }
 
@@ -375,11 +403,44 @@ export default function EcoSpotsScreen() {
       }, 350);
     }
 
-    // Also filter loaded spots after a slightly longer delay
+    // Filter loaded spots by keyword
     debounce.current = setTimeout(() => {
       fetchPlaces('all', null, text);
     }, 600);
   };
+
+  // ── Real text search — like Google Maps: type anything, get real OSM results ─
+  const handleTextSearch = useCallback(async () => {
+    const q = searchQuery.trim();
+    if (!q || q.length < 2) return;
+    setShowSuggestions(false);
+    setSuggestions([]);
+
+    // If it looks like a location/city, fly map there first
+    if (suggestions.length > 0) {
+      handleSuggestionSelect(suggestions[0]);
+      return;
+    }
+
+    if (!location) { showAlert('Location needed', 'Please allow location access first.'); return; }
+
+    setLoading(true);
+    try {
+      const res = await textSearchPlaces(q, location.latitude, location.longitude);
+      const fetched = (res.data.places ?? []).map(p => ({
+        ...p,
+        distance:    parseFloat(p.distance).toFixed(1),
+        markerColor: 'red',
+        icon:        '📍',
+      }));
+      setPlaces(fetched);
+      if (mapReady && fetched.length > 0) postToMap({ type: 'places', places: fetched });
+    } catch {
+      showAlert('Search failed', 'Could not search. Check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [searchQuery, location, suggestions, mapReady, postToMap]);
 
   // ── Autocomplete selection — fly map to chosen place, re-fetch spots there
   const handleSuggestionSelect = useCallback((suggestion) => {
@@ -467,21 +528,12 @@ export default function EcoSpotsScreen() {
             <Text style={s.searchIcon}>🔍</Text>
             <TextInput
               style={s.searchInput}
-              placeholder="Search city, parks, EV chargers…"
+              placeholder="Search EV chargers, parks, recycling…"
               placeholderTextColor="rgba(239,244,238,0.45)"
               value={searchQuery}
               onChangeText={handleSearchChange}
               returnKeyType="search"
-              onSubmitEditing={async () => {
-                setShowSuggestions(false);
-                if (suggestions.length > 0) { handleSuggestionSelect(suggestions[0]); return; }
-                if (searchQuery.trim().length < 2) return;
-                try {
-                  const res   = await getAutocomplete(searchQuery.trim());
-                  const preds = res.data.predictions ?? [];
-                  if (preds.length > 0) handleSuggestionSelect(preds[0]);
-                } catch {}
-              }}
+              onSubmitEditing={() => handleTextSearch()}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 180)}
             />
             {searchQuery.length > 0 && (
@@ -489,6 +541,13 @@ export default function EcoSpotsScreen() {
                 <Text style={s.clearX}>✕</Text>
               </TouchableOpacity>
             )}
+            <TouchableOpacity
+              style={s.searchGoBtn}
+              onPress={() => handleTextSearch()}
+              activeOpacity={0.8}
+            >
+              <Text style={s.searchGoBtnTxt}>Go</Text>
+            </TouchableOpacity>
           </View>
         </LinearGradient>
 
@@ -686,7 +745,9 @@ const s = StyleSheet.create({
                  borderWidth: 1, borderColor: 'rgba(178,208,84,0.25)' },
   searchIcon:  { fontSize: 15, marginRight: 8 },
   searchInput: { flex: 1, color: '#EFF4EE', fontSize: 14 },
-  clearX:      { fontSize: 13, color: '#B2D054', fontWeight: '700' },
+  clearX:      { fontSize: 13, color: '#B2D054', fontWeight: '700', marginRight: 6 },
+  searchGoBtn: { backgroundColor: '#B2D054', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, marginLeft: 6 },
+  searchGoBtnTxt: { fontSize: 12, fontWeight: '900', color: '#071209' },
 
   // Category chips
   filterWrap: { backgroundColor: '#0D1A10', borderBottomWidth: 1, borderBottomColor: 'rgba(178,208,84,0.1)' },

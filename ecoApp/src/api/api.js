@@ -2,11 +2,13 @@ import axios from 'axios';
 import storage from '../utils/storage';
 import { Platform } from 'react-native';
 
-const BASE_URL = __DEV__
-  ? Platform.OS === 'web'
-    ? 'http://localhost:3000/api'            // web browser
-    : 'http://192.168.100.63:3000/api'        // mobile device on same WiFi
-  : 'https://your-production-api.com/api';   // production
+const BASE_URL = Platform.OS === 'web'
+  ? (typeof window !== 'undefined' && window.location.hostname === 'localhost'
+      ? 'http://localhost:3000/api'           // web browser on local machine
+      : 'https://your-production-api.com/api') // web browser in production
+  : (__DEV__
+      ? 'http://192.168.100.63:3000/api'      // mobile device on same WiFi (dev)
+      : 'https://your-production-api.com/api'); // mobile production
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -64,6 +66,7 @@ export const getAutocomplete    = (input)        => api.get('/maps/autocomplete'
 export const geocodeSearch      = (input)        => api.get('/maps/autocomplete', { params: { input } });
 export const getNearbyPlaces    = (lat, lng, type, query = '') => api.get('/maps/nearby',      { params: { lat, lng, type, query } });
 export const getRealNearbyPlaces= (lat, lng, type, query = '') => api.get('/maps/real-nearby', { params: { lat, lng, type, query } });
+export const textSearchPlaces   = (q, lat, lng)             => api.get('/maps/text-search',  { params: { q, lat, lng } });
 
 // ─── Chatbot ──────────────────────────────────────────────────────────────────
 export const sendChatMessage    = (message, history) => api.post('/chatbot', { message, history });
@@ -87,5 +90,19 @@ export const getCommunityGoal   = ()             => api.get('/offset/community-g
 export const getPatchProjects   = ()             => api.get('/offset/patch/projects');
 export const getPatchEstimate   = (mass_kg)      => api.get('/offset/patch/estimate', { params: { mass_kg } });
 export const createPatchOrder   = (data)         => api.post('/offset/patch/order', data);
+
+// ─── Challenges ───────────────────────────────────────────────────────────────
+export const getChallenges     = ()         => api.get('/challenges');
+export const searchChallengeUser = (email)  => api.get('/challenges/search-user', { params: { email } });
+export const sendChallenge     = (data)     => api.post('/challenges/send', data);
+export const acceptChallenge   = (id)       => api.put(`/challenges/${id}/accept`);
+export const declineChallenge  = (id)       => api.put(`/challenges/${id}/decline`);
+export const completeChallenge = (id)       => api.post(`/challenges/${id}/complete`);
+
+// ─── Eco Island ───────────────────────────────────────────────────────────────
+export const getIsland    = ()           => api.get('/island');
+export const earnCredits  = (data)       => api.post('/island/earn', data);
+export const placeItem    = (data)       => api.post('/island/place', data);
+export const removeItem   = (x, y)      => api.delete(`/island/remove/${x}/${y}`);
 
 export default api;

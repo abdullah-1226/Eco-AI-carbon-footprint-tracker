@@ -796,7 +796,126 @@ exports.realNearbyPlaces = async (req, res) => {
             return res.status(200).json({ success: true, places: places.slice(0, 20), count: places.length, source: 'nominatim', city: geo.city });
     } catch { /* continue */ }
 
-    return res.status(200).json({ success: true, places: [], count: 0, source: 'empty', city: geo.city });
+    // ── 3. SPOTS_DB fallback — always returns nearby simulated eco spots ─────
+    const fallbackType = SPOTS_DB[type] ? type : 'park';
+    const fallbackPlaces = buildSpots(userLat, userLng, fallbackType, SPOTS_DB[fallbackType]);
+    const filtered = applyFilter(fallbackPlaces).sort((a, b) => a.distance - b.distance);
+    return res.status(200).json({ success: true, places: filtered, count: filtered.length, source: 'simulated', city: geo?.city });
+};
+
+// ─── @route  GET /api/maps/text-search ───────────────────────────────────────
+// Google-Maps-style: free text query + user coords → real OSM places on the map
+exports.textSearch = async (req, res, next) => {
+    try {
+        const { q, lat, lng } = req.query;
+        if (!q || !lat || !lng)
+            return res.status(400).json({ success: false, error: 'q, lat, lng are required' });
+
+        const userLat = parseFloat(lat);
+        const userLng = parseFloat(lng);
+        const query   = q.trim();
+        const seen    = new Set();
+        let   all     = [];
+
+        const addPlace = (p) => {
+            const key = `${p.name.toLowerCase().slice(0,20)}_${parseFloat(p.lat).toFixed(3)}_${parseFloat(p.lng).toFixed(3)}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            all.push(p);
+        };
+
+        // ── 1. Overpass — name text search near user ──────────────────────────
+        try {
+            const overpassQ = `[out:json][timeout:15];
+(
+  node["name"~"${query}",i](around:25000,${userLat},${userLng});
+  way["name"~"${query}",i](around:25000,${userLat},${userLng});
+  node["amenity"~"${query}",i](around:25000,${userLat},${userLng});
+);
+out center 20;`;
+            for (const mirror of OVERPASS_MIRRORS) {
+                try {
+                    const resp = await fetch(mirror, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: `data=${encodeURIComponent(overpassQ)}`,
+                        signal: AbortSignal.timeout(10000),
+                    });
+                    if (!resp.ok) continue;
+                    const data = await resp.json();
+                    for (const el of (data.elements ?? [])) {
+                        const elLat = el.lat ?? el.center?.lat;
+                        const elLng = el.lon ?? el.center?.lon;
+                        if (!elLat || !elLng) continue;
+                        const name = el.tags?.name || el.tags?.['name:en'] || el.tags?.['name:ur'];
+                        if (!name) continue;
+                        const street = [el.tags?.['addr:housenumber'], el.tags?.['addr:street']].filter(Boolean).join(' ');
+                        const area   = el.tags?.['addr:suburb'] || el.tags?.['addr:neighbourhood'] || '';
+                        addPlace({
+                            id: `osm_${el.type}_${el.id}`, name,
+                            address:  [street, area].filter(Boolean).join(', '),
+                            lat: elLat, lng: elLng,
+                            distance: haversineKm(userLat, userLng, elLat, elLng),
+                            type: 'search', typeLabel: el.tags?.amenity || el.tags?.leisure || 'Place',
+                            source: 'openstreetmap',
+                        });
+                    }
+                    break;
+                } catch { continue; }
+            }
+        } catch { /* continue */ }
+
+        // ── 2. Nominatim text search — searches OSM by keyword + city ─────────
+        try {
+            const geo = await reverseGeocode(userLat, userLng);
+            const cityHint = geo?.city || '';
+            const searchQ = cityHint ? `${query} ${cityHint}` : query;
+            const vb = `${userLng - 0.8},${userLat - 0.8},${userLng + 0.8},${userLat + 0.8}`;
+            const url = `${NOMINATIM}/search?q=${encodeURIComponent(searchQ)}&format=json&limit=20&addressdetails=1&viewbox=${vb}&bounded=0`;
+            const resp = await fetch(url, {
+                headers: { 'User-Agent': 'EcoTrack-AI/1.0 abdullahjarale@gmail.com' },
+                signal: AbortSignal.timeout(8000),
+            });
+            const data = await resp.json();
+            for (const item of (data ?? [])) {
+                const pLat = parseFloat(item.lat);
+                const pLng = parseFloat(item.lon);
+                const name = item.display_name.split(',')[0].trim();
+                if (!name) continue;
+                const parts = item.display_name.split(',');
+                const address = parts.slice(1, 4).join(',').trim();
+                addPlace({
+                    id: `nom_${item.place_id}`, name,
+                    address, lat: pLat, lng: pLng,
+                    distance: haversineKm(userLat, userLng, pLat, pLng),
+                    type: 'search', typeLabel: item.type || item.class || 'Place',
+                    source: 'openstreetmap',
+                });
+            }
+        } catch { /* continue */ }
+
+        all.sort((a, b) => a.distance - b.distance);
+
+        // ── 3. Simulated fallback — keyword-matched spots so map is never empty ─
+        if (all.length === 0) {
+            const lower = query.toLowerCase();
+            let fallback = Object.entries(SPOTS_DB).flatMap(([t, tpls]) =>
+                buildSpots(userLat, userLng, t, tpls).filter(p =>
+                    p.name.toLowerCase().includes(lower) ||
+                    p.typeLabel.toLowerCase().includes(lower) ||
+                    lower.split(' ').some(w => p.name.toLowerCase().includes(w))
+                )
+            );
+            if (fallback.length === 0) {
+                fallback = Object.entries(SPOTS_DB).flatMap(([t, tpls]) =>
+                    buildSpots(userLat, userLng, t, tpls)
+                ).sort((a, b) => a.distance - b.distance).slice(0, 10);
+            }
+            return res.status(200).json({ success: true, places: fallback, count: fallback.length, source: 'simulated' });
+        }
+
+        res.status(200).json({ success: true, places: all.slice(0, 20), count: all.length, source: 'openstreetmap' });
+    } catch (err) { next(err); }
 };
 
 // ─── @route  GET /api/maps/autocomplete ──────────────────────────────────────

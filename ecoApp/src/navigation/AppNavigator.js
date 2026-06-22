@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Animated, Easing,
-  TouchableOpacity, Platform, Image,
+  TouchableOpacity, Platform, Image, ScrollView,
 } from 'react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -35,7 +35,8 @@ import ShareScreen          from '../screens/share/ShareScreen';
 import EcoSpotsScreen       from '../screens/ecospots/EcoSpotsScreen';
 import OffsetScreen         from '../screens/offset/OffsetScreen';
 import RejuvenateScreen     from '../screens/offset/RejuvenateScreen';
-import EcoGardenScreen      from '../screens/garden/EcoGardenScreen';
+import IslandScreen         from '../screens/island/IslandScreen';
+import ChallengeScreen      from '../screens/challenge/ChallengeScreen';
 import SettingsScreen       from '../screens/settings/SettingsScreen';
 import OnboardingScreen     from '../screens/onboarding/OnboardingScreen';
 
@@ -43,40 +44,27 @@ const Stack  = createNativeStackNavigator();
 const Tab    = createBottomTabNavigator();
 export const navRef = createNavigationContainerRef();
 
-// ── Tab metadata (bottom bar on mobile) ───────────────────────────────────────
-const TABS_META = [
-  { name: 'Dashboard',   emoji: '🏠', label: 'Home'        },
-  { name: 'LogActivity', emoji: '➕', label: 'Log Activity' },
-  { name: 'Reports',     emoji: '📊', label: 'Reports'     },
-  { name: 'Chatbot',     emoji: '🤖', label: 'Eco Coach'   },
-  { name: 'Leaderboard', emoji: '🏆', label: 'Leaderboard' },
-  { name: 'Profile',     emoji: '👤', label: 'Profile'     },
-];
-
-// ── Sidebar nav (web) — tabs + extra stack screens ────────────────────────────
-const SIDEBAR_NAV = [
+// ── Single source of truth — drives BOTH the bottom bar and the web sidebar ───
+// To add a new screen to both: add one entry here (and register it as a Tab.Screen below)
+const NAV_ITEMS = [
   { name: 'Dashboard',    emoji: '🏠', label: 'Home'          },
   { name: 'LogActivity',  emoji: '➕', label: 'Log Activity'  },
   { name: 'Reports',      emoji: '📊', label: 'Reports'       },
   { name: 'Chatbot',      emoji: '🤖', label: 'Eco Coach'     },
   { name: 'EcoSpots',     emoji: '📍', label: 'Eco Spots'     },
   { name: 'CarbonOffset', emoji: '🌍', label: 'Carbon Offset' },
-  { name: 'EcoGarden',    emoji: '🌱', label: 'Eco Garden'    },
+  { name: 'EcoIsland',    emoji: '🏝️', label: 'Eco Island'    },
+  { name: 'Challenge',    emoji: '⚔️', label: 'Challenge'     },
   { name: 'Leaderboard',  emoji: '🏆', label: 'Leaderboard'   },
   { name: 'Profile',      emoji: '👤', label: 'Profile'       },
 ];
 
-const TAB_NAMES     = new Set(TABS_META.map(t => t.name));
-const SIDEBAR_NAMES = new Set(SIDEBAR_NAV.map(t => t.name));
+const NAV_NAMES = new Set(NAV_ITEMS.map(t => t.name));
 
-// Navigate correctly — tab screens need to go through MainTabs
+// All NAV_ITEMS are Tab.Screens inside MainTabs — always navigate via MainTabs
 const sidebarNavigate = (name) => {
   if (!navRef.isReady()) return;
-  if (TAB_NAMES.has(name)) {
-    navRef.navigate('MainTabs', { screen: name });
-  } else {
-    navRef.navigate(name);
-  }
+  navRef.navigate('MainTabs', { screen: name });
 };
 
 // ── Animated tab icon (mobile bottom bar) ────────────────────────────────────
@@ -138,9 +126,13 @@ function WebSidebar({ activeTab }) {
         <Text style={ws.logoTxt}>EcoTrack AI</Text>
       </TouchableOpacity>
 
-      {/* Nav items */}
-      <View style={ws.navItems}>
-        {SIDEBAR_NAV.map(meta => {
+      {/* Nav items — scrollable so adding more items never overflows */}
+      <ScrollView
+        style={ws.navItems}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {NAV_ITEMS.map(meta => {
           const focused = activeTab === meta.name;
           return (
             <TouchableOpacity
@@ -157,7 +149,7 @@ function WebSidebar({ activeTab }) {
             </TouchableOpacity>
           );
         })}
-      </View>
+      </ScrollView>
 
       {/* Footer — settings shortcut */}
       <View style={ws.footer}>
@@ -175,12 +167,12 @@ function WebSidebar({ activeTab }) {
 }
 
 // ── Bottom tab bar (mobile only, hidden when sidebar shown or on Settings) ────
+// Scrollable horizontally — adding items to NAV_ITEMS auto-adds them here too
 function CustomTabBar({ state, navigation, showSidebar }) {
   const currentRoute = state.routes[state.index]?.name;
-  // Hide entirely when sidebar is active or user is on the hidden Settings tab
   if (showSidebar || currentRoute === 'Settings') return null;
 
-  const visibleRoutes = state.routes.filter(r => TABS_META.some(t => t.name === r.name));
+  const visibleRoutes = state.routes.filter(r => NAV_NAMES.has(r.name));
 
   return (
     <LinearGradient
@@ -189,20 +181,27 @@ function CustomTabBar({ state, navigation, showSidebar }) {
       end={{ x: 0, y: 1 }}
       style={ws.bottomBar}
     >
-      {visibleRoutes.map(route => {
-        const meta    = TABS_META.find(t => t.name === route.name);
-        const focused = state.routes[state.index]?.name === route.name;
-        return (
-          <TouchableOpacity
-            key={route.key}
-            style={ws.bottomTab}
-            onPress={() => navigation.navigate(route.name)}
-            activeOpacity={0.7}
-          >
-            <AnimatedTabIcon emoji={meta.emoji} label={meta.label} focused={focused} />
-          </TouchableOpacity>
-        );
-      })}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        bounces={false}
+        contentContainerStyle={ws.bottomBarContent}
+      >
+        {visibleRoutes.map(route => {
+          const meta    = NAV_ITEMS.find(t => t.name === route.name);
+          const focused = state.routes[state.index]?.name === route.name;
+          return (
+            <TouchableOpacity
+              key={route.key}
+              style={ws.bottomTab}
+              onPress={() => navigation.navigate(route.name)}
+              activeOpacity={0.7}
+            >
+              <AnimatedTabIcon emoji={meta.emoji} label={meta.label} focused={focused} />
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
     </LinearGradient>
   );
 }
@@ -252,20 +251,18 @@ function MainTabs({ showSidebar }) {
       tabBar={(props) => <CustomTabBar {...props} showSidebar={showSidebar} />}
       screenOptions={{ ...headerOpts }}
     >
-      <Tab.Screen name="Dashboard"   component={DashboardScreen}   options={{ title: '🌿 EcoTrack AI' }} />
-      <Tab.Screen name="LogActivity" component={LogActivityScreen}
-        options={{ title: '➕ Log Activity', headerLeft: () => <BackButton dark inline /> }} />
-      <Tab.Screen name="Reports"     component={ReportsScreen}
-        options={{ title: '📊 Reports', headerLeft: () => <BackButton dark inline /> }} />
-      <Tab.Screen name="Chatbot"     component={ChatbotScreen}
-        options={{ title: '🤖 Eco Coach', headerLeft: () => <BackButton dark inline /> }} />
-      <Tab.Screen name="Leaderboard" component={LeaderboardScreen}
-        options={{ title: '🏆 Leaderboard', headerLeft: () => <BackButton dark inline /> }} />
-      <Tab.Screen name="Profile"     component={ProfileScreen}
-        options={{ title: '👤 My Profile', headerLeft: () => <BackButton dark inline /> }} />
-      {/* Settings lives here so the tab bar stays visible while inside it */}
-      <Tab.Screen name="Settings"    component={SettingsScreen}
-        options={{ headerShown: false, tabBarButton: () => null }} />
+      <Tab.Screen name="Dashboard"    component={DashboardScreen}    options={{ title: '🌿 EcoTrack AI' }} />
+      <Tab.Screen name="LogActivity"  component={LogActivityScreen}  options={{ title: '➕ Log Activity', headerLeft: () => <BackButton dark inline /> }} />
+      <Tab.Screen name="Reports"      component={ReportsScreen}      options={{ title: '📊 Reports',      headerLeft: () => <BackButton dark inline /> }} />
+      <Tab.Screen name="Chatbot"      component={ChatbotScreen}      options={{ title: '🤖 Eco Coach',    headerLeft: () => <BackButton dark inline /> }} />
+      <Tab.Screen name="EcoSpots"     component={EcoSpotsScreen}     options={{ headerShown: false }} />
+      <Tab.Screen name="CarbonOffset" component={RejuvenateScreen}   options={{ headerShown: false }} />
+      <Tab.Screen name="EcoIsland"    component={IslandScreen}       options={{ headerShown: false }} />
+      <Tab.Screen name="Challenge"    component={ChallengeScreen}    options={{ headerShown: false }} />
+      <Tab.Screen name="Leaderboard"  component={LeaderboardScreen}  options={{ title: '🏆 Leaderboard', headerLeft: () => <BackButton dark inline /> }} />
+      <Tab.Screen name="Profile"      component={ProfileScreen}      options={{ title: '👤 My Profile',  headerLeft: () => <BackButton dark inline /> }} />
+      {/* Settings: hidden from tab bar, accessible via sidebar/button */}
+      <Tab.Screen name="Settings"     component={SettingsScreen}     options={{ headerShown: false, tabBarButton: () => null }} />
     </Tab.Navigator>
   );
 }
@@ -283,10 +280,10 @@ function AuthStack() {
         },
       }}
     >
-      <Stack.Screen name="Login"          component={LoginScreen} />
-      <Stack.Screen name="Register"       component={RegisterScreen} />
-      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-      <Stack.Screen name="ResetPassword"  component={ResetPasswordScreen} />
+      <Stack.Screen name="Login"          component={LoginScreen}         options={{ title: 'Sign In' }} />
+      <Stack.Screen name="Register"       component={RegisterScreen}      options={{ title: 'Create Account' }} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ title: 'Reset Password' }} />
+      <Stack.Screen name="ResetPassword"  component={ResetPasswordScreen}  options={{ title: 'New Password' }} />
     </Stack.Navigator>
   );
 }
@@ -319,10 +316,8 @@ function AppStack({ showSidebar }) {
           } }} />
 
       {[
-        { name: 'Share',      comp: ShareScreen      },
-        { name: 'Offset',     comp: OffsetScreen     },
-        { name: 'CarbonOffset', comp: RejuvenateScreen  },
-        { name: 'EcoGarden',   comp: EcoGardenScreen   },
+        { name: 'Share',  comp: ShareScreen  },
+        { name: 'Offset', comp: OffsetScreen },
       ].map(({ name, comp }) => (
         <Stack.Screen key={name} name={name} component={comp}
           options={{ headerShown: false, cardStyleInterpolator: sheetInterp,
@@ -331,9 +326,6 @@ function AppStack({ showSidebar }) {
               close: { animation: 'timing', config: { duration: 240, easing: Easing.in(Easing.cubic) } },
             } }} />
       ))}
-
-      <Stack.Screen name="EcoSpots" component={EcoSpotsScreen}
-        options={{ headerShown: false, cardStyleInterpolator: slideInterp }} />
 
       <Stack.Screen name="CreatePost"
         component={require('../screens/posts/CreatePostScreen').default}
@@ -362,13 +354,17 @@ export default function AppNavigator() {
   const handleStateChange = useCallback(() => {
     if (!navRef.isReady()) return;
     const route = navRef.getCurrentRoute();
-    if (route && SIDEBAR_NAMES.has(route.name)) setActiveTab(route.name);
+    if (route && NAV_NAMES.has(route.name)) setActiveTab(route.name);
   }, []);
 
   if (loading) return <Loading message="Loading EcoTrack AI..." />;
 
   return (
-    <NavigationContainer ref={navRef} onStateChange={handleStateChange}>
+    <NavigationContainer
+      ref={navRef}
+      onStateChange={handleStateChange}
+      documentTitle={{ formatter: (options) => options?.title ? `${options.title} | EcoTrack AI` : 'EcoTrack AI' }}
+    >
       {/*
         Layout:
           • Mobile  → column (content on top, tab bar at bottom)
@@ -449,10 +445,8 @@ const ws = StyleSheet.create({
   settingsBtnTxt:{ fontSize: 14, color: 'rgba(255,255,255,0.45)', fontWeight: '500' },
   footerTxt:    { fontSize: 10, color: 'rgba(255,255,255,0.22)', fontWeight: '500', paddingLeft: 4 },
 
-  // ── Mobile bottom tab bar — Emerald Gradient crystal style ──────────────
+  // ── Mobile bottom tab bar — scrollable horizontal strip ──────────────────
   bottomBar: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
     borderTopWidth: 1.5,
     borderTopColor: 'rgba(178,208,84,0.22)',
     paddingTop: 6,
@@ -463,10 +457,16 @@ const ws = StyleSheet.create({
     shadowRadius: 14,
     elevation: 18,
   },
+  bottomBarContent: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    paddingHorizontal: 4,
+  },
   bottomTab: {
-    flex: 1,
+    minWidth: 68,
     alignItems: 'center',
     justifyContent: 'flex-start',
     paddingTop: 2,
+    paddingHorizontal: 4,
   },
 });
