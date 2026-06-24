@@ -2,7 +2,7 @@ import axios from 'axios';
 import storage from '../utils/storage';
 import { Platform } from 'react-native';
 
-const PROD_URL = 'https://ecotrack-backend.onrender.com/api';
+const PROD_URL = 'https://eco-ai-carbon-footprint-tracker-backend.onrender.com/api';
 
 const BASE_URL = Platform.OS === 'web'
   ? (typeof window !== 'undefined' && window.location.hostname === 'localhost'
