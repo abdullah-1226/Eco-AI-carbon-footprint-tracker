@@ -9,6 +9,8 @@ import { logActivity, getDistance, geocodeSearch, analyzeScenario } from '../../
 import { showAlert } from '../../utils/crossAlert';
 import { Spacing } from '../../theme';
 import { useAppTheme, buildC } from '../../context/ThemeContext';
+import { useHaptics } from '../../hooks/useHaptics';
+import EcoConfetti from '../../components/EcoConfetti';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DATA — categories, types and scenarios
@@ -710,6 +712,8 @@ export default function LogActivityScreen({ navigation, route }) {
   const { theme: appTheme } = useAppTheme();
   const C = useMemo(() => buildC(appTheme), [appTheme]);
   const s = useMemo(() => makeStyles(C), [C]);
+  const { light, medium, success: hapticSuccess, error: hapticError } = useHaptics();
+  const confettiRef = useRef(null);
 
   const [selectedCat,      setSelectedCat]      = useState(initCat);
   const [selectedType,     setSelectedType]      = useState(null);
@@ -822,6 +826,7 @@ export default function LogActivityScreen({ navigation, route }) {
       showAlert('Analyse First', 'Please type your scenario description and press "Analyse CO₂" before logging.');
       return;
     }
+    medium();
     setLoading(true);
     try {
       const payload = {
@@ -844,10 +849,15 @@ export default function LogActivityScreen({ navigation, route }) {
         payload.customEF = effectiveEF;
       }
       const res = await logActivity(payload);
+      hapticSuccess();
       setSuccess(res.data);
+      if (res.data?.newBadges?.length > 0) {
+        setTimeout(() => confettiRef.current?.fire(), 300);
+      }
       setValue(''); setNote(''); setSelectedType(null); setSelectedScenario(null); setDistResult(null);
       origin.clear(); dest.clear();
     } catch (err) {
+      hapticError();
       showAlert('Error', err.response?.data?.error || 'Failed to log activity.');
     } finally { setLoading(false); }
   };
@@ -856,6 +866,7 @@ export default function LogActivityScreen({ navigation, route }) {
   if (success) {
     return (
       <LinearGradient colors={['#0A1A0F', '#0C1B12', '#0E2016']} style={s.successWrap}>
+        <EcoConfetti ref={confettiRef} />
         <Text style={s.successEmoji}>🌱</Text>
         <Text style={s.successTitle}>Activity Logged!</Text>
         <Text style={s.successCO2}>{success.data?.co2e?.toFixed(2)} kg CO₂ recorded</Text>
@@ -902,6 +913,7 @@ export default function LogActivityScreen({ navigation, route }) {
               key={c.id}
               style={[s.catCard, selectedCat === c.id && s.catCardActive]}
               onPress={() => {
+                light();
                 setSelectedCat(c.id);
                 setSelectedType(null); setSelectedScenario(null);
                 setCustomDesc(''); setAiResult(null);

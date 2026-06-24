@@ -13,6 +13,10 @@ import { useAuth } from '../../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { avatarKey } from '../profile/ProfileScreen';
 import ScreenTransition from '../../components/ScreenTransition';
+import AnimatedNumber from '../../components/AnimatedNumber';
+import { SkeletonDashboard } from '../../components/SkeletonLoader';
+import LottieEmptyState from '../../components/LottieEmptyState';
+import EcoRefreshControl, { RefreshOverlay } from '../../components/EcoRefreshControl';
 
 // ── Donut colors ──────────────────────────────────────────────────────────────
 const DONUT_COLORS = {
@@ -247,12 +251,7 @@ export default function DashboardScreen({ navigation }) {
   };
 
   if (loading) {
-    return (
-      <LinearGradient colors={appTheme.bgGrad} style={s.loader}>
-        <ActivityIndicator size="large" color={C.green600} />
-        <Text style={s.loaderTxt}>Loading your eco dashboard…</Text>
-      </LinearGradient>
-    );
+    return <SkeletonDashboard />;
   }
 
   // ── Data extraction ────────────────────────────────────────────────────────
@@ -281,15 +280,14 @@ export default function DashboardScreen({ navigation }) {
   return (
     <ScreenTransition>
     <LinearGradient colors={appTheme.bgGrad} style={{ flex: 1 }}>
+    <RefreshOverlay refreshing={refreshing} />
     <ScrollView
       style={s.root}
       showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl
+        <EcoRefreshControl
           refreshing={refreshing}
           onRefresh={() => { setRefreshing(true); fetchData(); }}
-          tintColor={C.green600}
-          colors={[C.green600]}
         />
       }
     >
@@ -343,7 +341,7 @@ export default function DashboardScreen({ navigation }) {
               <BlurView intensity={55} tint="dark" style={StyleSheet.absoluteFill} />
               <View style={s.circleContent}>
                 <Text style={s.circleLabel}>MY CO₂ TODAY</Text>
-                <Text style={s.circleVal}>{todayCO2}</Text>
+                <AnimatedNumber value={todayCO2} style={s.circleVal} decimals={1} duration={1400} />
                 <Text style={s.circleUnit}>kg CO₂e</Text>
                 <View style={s.circleBar}>
                   <View style={[s.circleBarFill, { width: `${limitPct}%` }]} />
@@ -435,14 +433,17 @@ export default function DashboardScreen({ navigation }) {
       <View style={s.section}>
         <View style={s.pillRow}>
           {[
-            { emoji: '🔥', val: stats.currentStreak ?? 0,    lbl: 'Streak', bg: C.amber50, border: C.amber100, color: C.amber600 },
-            { emoji: '⭐', val: stats.totalPoints   ?? 0,    lbl: 'Points', bg: C.teal50,  border: C.teal100,  color: C.teal600  },
-            { emoji: '🏅', val: (stats.badges??[]).length,   lbl: 'Badges', bg: C.coral50, border: C.coral100, color: C.coral600 },
-            { emoji: '🌿', val: `Lv.${stats.level ?? 1}`,   lbl: 'Level',  bg: C.green50, border: C.green100, color: C.green600 },
+            { emoji: '🔥', val: stats.currentStreak ?? 0,  lbl: 'Streak', bg: C.amber50, border: C.amber100, color: C.amber600, isNum: true  },
+            { emoji: '⭐', val: stats.totalPoints   ?? 0,  lbl: 'Points', bg: C.teal50,  border: C.teal100,  color: C.teal600,  isNum: true  },
+            { emoji: '🏅', val: (stats.badges??[]).length, lbl: 'Badges', bg: C.coral50, border: C.coral100, color: C.coral600, isNum: true  },
+            { emoji: '🌿', val: `Lv.${stats.level ?? 1}`,  lbl: 'Level',  bg: C.green50, border: C.green100, color: C.green600, isNum: false },
           ].map((p, i) => (
             <View key={i} style={[s.pill, { backgroundColor: p.bg, borderColor: p.border }]}>
               <Text style={s.pillEmoji}>{p.emoji}</Text>
-              <Text style={[s.pillVal, { color: p.color }]}>{p.val}</Text>
+              {p.isNum
+                ? <AnimatedNumber value={p.val} style={[s.pillVal, { color: p.color }]} decimals={0} duration={1000} />
+                : <Text style={[s.pillVal, { color: p.color }]}>{p.val}</Text>
+              }
               <Text style={[s.pillLbl, { color: p.color }]}>{p.lbl}</Text>
             </View>
           ))}
@@ -755,10 +756,11 @@ export default function DashboardScreen({ navigation }) {
         </View>
 
         {activities.length === 0 ? (
-          <View style={s.emptyBox}>
-            <Image source={require('../../../assets/carbon-icon.png')} style={{ width: 52, height: 52 }} resizeMode="contain" />
-            <Text style={s.emptyTxt}>No activities logged yet.</Text>
-          </View>
+          <LottieEmptyState
+            type="plant"
+            message="No activities logged yet"
+            subMessage="Tap Log Activity to start tracking your carbon footprint"
+          />
         ) : (
           activities.map((act, i) => {
             const cat      = act.category ?? 'transport';

@@ -6,6 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { WebView } from 'react-native-webview';
+import { useNavigation } from '@react-navigation/native';
 import { getRealNearbyPlaces, getAutocomplete, textSearchPlaces } from '../../api/api';
 import { showAlert } from '../../utils/crossAlert';
 import BackButton from '../../components/BackButton';
@@ -34,21 +35,76 @@ const buildMapHTML = () => `<!DOCTYPE html>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html,body,#map { width:100%; height:100%; background:#e8f4e8; }
-  .user-dot { width:18px; height:18px; border-radius:50%; background:#1565C0;
-              border:3px solid #fff; box-shadow:0 0 0 4px rgba(21,101,192,0.3); }
+  html,body { width:100%; height:100%; }
+  #map { width:100%; height:100%; background:#e8f4e8; }
+  @keyframes locPulse {
+    0%   { transform:scale(0.6); opacity:0.7; }
+    100% { transform:scale(2.4); opacity:0; }
+  }
+  .user-dot-wrap {
+    width:48px; height:48px; position:relative;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .user-dot-pulse {
+    position:absolute; width:48px; height:48px; border-radius:50%;
+    background:rgba(21,101,192,0.3);
+    animation:locPulse 2s ease-out infinite;
+  }
+  .user-dot {
+    position:relative; z-index:1;
+    width:22px; height:22px; border-radius:50%; background:#1565C0;
+    border:3px solid #fff;
+    box-shadow:0 2px 10px rgba(21,101,192,0.6), 0 1px 4px rgba(0,0,0,0.2);
+  }
   .leaflet-popup-content { font-size:13px; min-width:180px; }
-  .popup-title  { font-weight:700; color:#1a1a1a; margin-bottom:4px; font-size:14px; }
-  .popup-dist   { color:#555; font-size:12px; margin-bottom:6px; }
-  .popup-addr   { color:#777; font-size:11px; margin-bottom:8px; }
-  .popup-btn    { display:block; background:#0A1A0F; color:#fff; padding:7px 12px;
-                  border-radius:8px; text-align:center; font-weight:700; font-size:12px;
-                  text-decoration:none; cursor:pointer; border:none; width:100%; }
+  .popup-title { font-weight:700; color:#1a1a1a; margin-bottom:4px; font-size:14px; }
+  .popup-dist  { color:#555; font-size:12px; margin-bottom:6px; }
+  .popup-addr  { color:#777; font-size:11px; margin-bottom:8px; }
+  .popup-btn   { display:block; background:#0A1A0F; color:#fff; padding:7px 12px;
+                 border-radius:8px; text-align:center; font-weight:700; font-size:12px;
+                 cursor:pointer; border:none; width:100%; }
   .leaflet-control-zoom { border:none !important; box-shadow:0 2px 8px rgba(0,0,0,0.15) !important; }
   .leaflet-control-zoom a { border-radius:8px !important; margin:2px; }
+
+  /* ── Route panel ── */
+  #route-loading {
+    display:none; position:absolute; bottom:0; left:0; right:0; z-index:1001;
+    background:rgba(10,26,15,0.96); color:#B2D054;
+    padding:14px; text-align:center; font-weight:700; font-size:13px;
+    border-top:2px solid rgba(178,208,84,0.4);
+  }
+  #route-panel {
+    display:none; position:absolute; bottom:0; left:0; right:0; z-index:1000;
+    background:rgba(10,26,15,0.97); color:#EFF4EE;
+    padding:12px 14px; border-top:2px solid rgba(178,208,84,0.4);
+    flex-direction:column; gap:8px;
+  }
+  .rp-info { display:flex; align-items:center; gap:8px; }
+  .rp-name { font-weight:700; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+  .rp-dist { font-weight:800; color:#B2D054; font-size:15px; white-space:nowrap; }
+  .rp-time { color:rgba(239,244,238,0.55); font-size:12px; white-space:nowrap; }
+  .rp-btns { display:flex; gap:8px; }
+  .rp-clear { flex:1; background:#E53935; color:#fff; border:none; border-radius:8px;
+              padding:9px; cursor:pointer; font-weight:700; font-size:12px; }
+  .rp-ext   { flex:1; background:rgba(178,208,84,0.1); color:#B2D054;
+              border:1px solid rgba(178,208,84,0.35); border-radius:8px;
+              padding:9px; cursor:pointer; font-weight:700; font-size:12px;
+              text-align:center; text-decoration:none; display:block; }
 </style>
 </head><body>
 <div id="map"></div>
+<div id="route-loading">🗺️ Calculating route…</div>
+<div id="route-panel">
+  <div class="rp-info">
+    <span class="rp-name" id="rp-name"></span>
+    <span class="rp-dist" id="rp-dist"></span>
+    <span class="rp-time" id="rp-time"></span>
+  </div>
+  <div class="rp-btns">
+    <button class="rp-clear" onclick="clearRoute()">✕ Clear Route</button>
+    <button class="rp-ext" id="rp-ext" onclick="openInMaps()">↗ Open in Maps</button>
+  </div>
+</div>
 <script>
   function sendUp(data) {
     if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(data); }
@@ -58,16 +114,16 @@ const buildMapHTML = () => `<!DOCTYPE html>
   var map = L.map('map', { zoomControl: true, attributionControl: false });
   map.setView([20, 0], 2);
 
-  // Voyager tiles — polished, Google Maps-like style
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
     maxZoom: 19, crossOrigin: true,
   }).addTo(map);
 
-  var userMarker   = null;
-  var spotMarkers  = [];
-  var locationSet  = false;
-  var blockReport  = false;  // suppress mapMoved after programmatic flyTo
-  var blockTimer   = null;
+  var userMarker  = null;
+  var spotMarkers = [];
+  var locationSet = false;
+  var blockReport = false;
+  var blockTimer  = null;
+  var routeLine   = null;   // active route polyline
 
   function blockMoveReport(ms) {
     blockReport = true;
@@ -76,7 +132,7 @@ const buildMapHTML = () => `<!DOCTYPE html>
   }
 
   function userIcon() {
-    return L.divIcon({ className:'', html:'<div class="user-dot"></div>', iconSize:[18,18], iconAnchor:[9,9] });
+    return L.divIcon({ className:'', html:'<div class="user-dot-wrap"><div class="user-dot-pulse"></div><div class="user-dot"></div></div>', iconSize:[48,48], iconAnchor:[24,24] });
   }
 
   function setUserLocation(lat, lng) {
@@ -93,8 +149,19 @@ const buildMapHTML = () => `<!DOCTYPE html>
     }
   }
 
+  // Move blue dot silently as user walks — no pan/zoom so they can browse the list
+  function updateUserLocation(lat, lng) {
+    if (userMarker) {
+      userMarker.setLatLng([lat, lng]);
+    } else {
+      userMarker = L.marker([lat, lng], { icon: userIcon(), zIndexOffset: 1000 })
+        .bindPopup('<b>\\u{1F4CD} Your Location</b>')
+        .addTo(map);
+    }
+  }
+
   function setPlaces(places) {
-    spotMarkers.forEach(m => map.removeLayer(m));
+    spotMarkers.forEach(function(m) { map.removeLayer(m); });
     spotMarkers = [];
     places.forEach(function(p) {
       var color = p.markerColor || 'green';
@@ -104,10 +171,11 @@ const buildMapHTML = () => `<!DOCTYPE html>
         iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
       });
       var m = L.marker([p.lat, p.lng], { icon: icon });
+      var safeName = p.name.replace(/\\\\/g,'\\\\\\\\').replace(/"/g,'\\\\"').replace(/'/g,"\\\\'");
       var popup = '<div class="popup-title">' + p.icon + ' ' + p.name + '</div>'
         + '<div class="popup-dist">\\u{1F4CF} ' + p.distance + ' km away</div>'
         + (p.address ? '<div class="popup-addr">\\u{1F4CD} ' + p.address + '</div>' : '')
-        + '<button class="popup-btn" onclick="sendUp(JSON.stringify({action:\\'directions\\',lat:' + p.lat + ',lng:' + p.lng + ',name:\\"' + p.name.replace(/"/g,\\'\\') + '\\"}))">\\u{1F5FA}\\uFE0F Get Directions</button>';
+        + '<button class="popup-btn" onclick="sendUp(JSON.stringify({action:\\'directions\\',lat:' + p.lat + ',lng:' + p.lng + ',name:\\"' + safeName + '\\"}))">\\u{1F5FA}\\uFE0F Get Directions</button>';
       m.bindPopup(popup);
       m.on('click', function() { sendUp(JSON.stringify({ action:'select', id: p.id })); });
       m.addTo(map);
@@ -120,7 +188,68 @@ const buildMapHTML = () => `<!DOCTYPE html>
     map.flyTo([lat, lng], 16, { duration: 0.8 });
   }
 
-  // Emit center after user-initiated pan/zoom (not programmatic moves)
+  // ── In-app routing via OSRM (same geolocation as the eco app) ────────────────
+  var pendingMapsUrl = '';
+
+  function clearRoute() {
+    if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+    document.getElementById('route-panel').style.display   = 'none';
+    document.getElementById('route-loading').style.display = 'none';
+    pendingMapsUrl = '';
+  }
+
+  // "Open in Maps" button — sends URL to React Native so it can call Linking.openURL
+  // (WebView cannot open external links via <a target="_blank"> on iOS/Android)
+  function openInMaps() {
+    if (pendingMapsUrl) sendUp(JSON.stringify({ action: 'openMaps', url: pendingMapsUrl }));
+  }
+
+  async function drawRoute(oLat, oLng, dLat, dLng, name) {
+    clearRoute();
+    document.getElementById('route-loading').style.display = 'block';
+    try {
+      // OSRM expects lng,lat order (not lat,lng)
+      var url = 'https://router.project-osrm.org/route/v1/driving/'
+        + oLng + ',' + oLat + ';'
+        + dLng + ',' + dLat
+        + '?overview=full&geometries=geojson';
+
+      // AbortController instead of AbortSignal.timeout() — works on iOS < 16 & old Android
+      var controller = new AbortController();
+      var tid = setTimeout(function() { controller.abort(); }, 12000);
+      var resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(tid);
+
+      var data = await resp.json();
+      document.getElementById('route-loading').style.display = 'none';
+      if (!data.routes || !data.routes[0]) { sendUp(JSON.stringify({ action:'routeError' })); return; }
+
+      var route  = data.routes[0];
+      // GeoJSON coords are [lng,lat] — Leaflet needs [lat,lng]
+      var coords = route.geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
+      routeLine  = L.polyline(coords, { color:'#1565C0', weight:6, opacity:0.85 }).addTo(map);
+      blockMoveReport(3000);
+      map.fitBounds(routeLine.getBounds(), { padding:[50,50] });
+
+      var distKm  = (route.distance / 1000).toFixed(1);
+      var mins    = Math.round(route.duration / 60);
+      var timeStr = mins >= 60 ? Math.floor(mins/60) + 'h ' + (mins%60) + 'min' : mins + ' min';
+
+      document.getElementById('rp-name').textContent = name || 'Destination';
+      document.getElementById('rp-dist').textContent = distKm + ' km';
+      document.getElementById('rp-time').textContent = '· ' + timeStr;
+      // Store maps URL — opened via React Native Linking, not <a href>, so it works on mobile
+      pendingMapsUrl =
+        'https://www.google.com/maps/dir/?api=1&origin=' + oLat + ',' + oLng + '&destination=' + dLat + ',' + dLng;
+      document.getElementById('route-panel').style.display = 'flex';
+
+      sendUp(JSON.stringify({ action:'routeDrawn', distKm: distKm, duration: timeStr }));
+    } catch(e) {
+      document.getElementById('route-loading').style.display = 'none';
+      sendUp(JSON.stringify({ action:'routeError' }));
+    }
+  }
+
   var moveTimer = null;
   map.on('moveend', function() {
     if (blockReport) return;
@@ -138,9 +267,12 @@ const buildMapHTML = () => `<!DOCTYPE html>
   function handleMsg(e) {
     try {
       var msg = JSON.parse(e.data);
-      if (msg.type === 'init')   setUserLocation(msg.lat, msg.lng);
-      if (msg.type === 'places') setPlaces(msg.places);
-      if (msg.type === 'flyTo')  flyTo(msg.lat, msg.lng);
+      if (msg.type === 'init')           setUserLocation(msg.lat, msg.lng);
+      if (msg.type === 'updateLocation') updateUserLocation(msg.lat, msg.lng);
+      if (msg.type === 'places')         setPlaces(msg.places);
+      if (msg.type === 'flyTo')          flyTo(msg.lat, msg.lng);
+      if (msg.type === 'route')          drawRoute(msg.oLat, msg.oLng, msg.dLat, msg.dLng, msg.name);
+      if (msg.type === 'clearRoute')     clearRoute();
     } catch(_) {}
   }
 </script>
@@ -222,9 +354,13 @@ export default function EcoSpotsScreen() {
   const [showSearchArea, setShowSearchArea]   = useState(false);
   const [mapCenter, setMapCenter]             = useState(null);
 
-  const webRef     = useRef(null);
-  const debounce   = useRef(null);
-  const acDebounce = useRef(null);
+  const navigation   = useNavigation();
+  const webRef       = useRef(null);
+  const debounce     = useRef(null);
+  const acDebounce   = useRef(null);
+  const locationRef  = useRef(null);   // always-current location for stale-closure-safe callbacks
+  const watchRef     = useRef(null);   // expo-location / browser watchPosition subscription
+  const mapReadyRef  = useRef(false);  // mirror of mapReady for use inside watch callback
 
   // ── Send message to Leaflet map ─────────────────────────────────────────
   const postToMap = useCallback((msg) => {
@@ -252,7 +388,58 @@ export default function EcoSpotsScreen() {
     return null;
   };
 
+  // Keep refs in sync with state so watch callbacks never have stale closures.
+  useEffect(() => { locationRef.current = location; }, [location]);
+  useEffect(() => { mapReadyRef.current = mapReady; }, [mapReady]);
+
+  // Stop location watch when screen unmounts
+  useEffect(() => {
+    return () => {
+      if (watchRef.current) {
+        if (typeof watchRef.current.remove === 'function') watchRef.current.remove();
+        else if (typeof watchRef.current === 'number') navigator?.geolocation?.clearWatch(watchRef.current);
+        watchRef.current = null;
+      }
+    };
+  }, []);
+
   // ── Location ─────────────────────────────────────────────────────────────
+  const startWatch = useCallback((initialCoords) => {
+    // Stop any existing watch first
+    if (watchRef.current) {
+      if (typeof watchRef.current.remove === 'function') watchRef.current.remove();
+      else if (typeof watchRef.current === 'number') navigator?.geolocation?.clearWatch(watchRef.current);
+      watchRef.current = null;
+    }
+
+    if (Platform.OS === 'web') {
+      if (!navigator?.geolocation) return;
+      const id = navigator.geolocation.watchPosition(
+        (pos) => {
+          const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          setLocation(coords);
+          if (mapReadyRef.current) {
+            postToMap({ type: 'updateLocation', lat: coords.latitude, lng: coords.longitude });
+          }
+        },
+        null,
+        { enableHighAccuracy: true, maximumAge: 5000 }
+      );
+      watchRef.current = id;  // browser returns a numeric ID
+    } else {
+      Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 },
+        (loc) => {
+          const coords = loc.coords;
+          setLocation(coords);
+          if (mapReadyRef.current) {
+            postToMap({ type: 'updateLocation', lat: coords.latitude, lng: coords.longitude });
+          }
+        }
+      ).then((sub) => { watchRef.current = sub; }).catch(() => {});
+    }
+  }, [postToMap]);
+
   const getLocation = useCallback(async () => {
     setLocError(null);
 
@@ -262,13 +449,15 @@ export default function EcoSpotsScreen() {
         navigator.geolocation.getCurrentPosition(
           (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
           ()    => resolve(null),
-          { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
       });
-      if (browserCoords) { setLocation(browserCoords); return browserCoords; }
-      const ipCoords = await getLocationByIP();
-      if (ipCoords) { setLocation(ipCoords); return ipCoords; }
-      setLocError('Could not detect your location. Please check your internet connection.');
+      if (browserCoords) {
+        setLocation(browserCoords);
+        startWatch(browserCoords);
+        return browserCoords;
+      }
+      setLocError('Could not get your precise location. Please allow location access in your browser for accurate distances.');
       return null;
     }
 
@@ -280,12 +469,13 @@ export default function EcoSpotsScreen() {
     try {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       setLocation(loc.coords);
+      startWatch(loc.coords);
       return loc.coords;
     } catch {
       setLocError('Could not get your location. Please try again.');
       return null;
     }
-  }, []);
+  }, [startWatch]);
 
   // ── Fetch places ──────────────────────────────────────────────────────────
   const fetchPlaces = useCallback(async (type, coords, query = '') => {
@@ -466,14 +656,26 @@ export default function EcoSpotsScreen() {
   const onMapMessage = useCallback((e) => {
     try {
       const msg = JSON.parse(e.nativeEvent?.data ?? e.data ?? '{}');
-      if (msg.action === 'select')     setSelectedId(msg.id);
-      if (msg.action === 'directions') openDirections(msg.lat, msg.lng);
+      if (msg.action === 'select') setSelectedId(msg.id);
+      if (msg.action === 'directions') {
+        // locationRef always holds the latest location — no stale closure issue
+        const loc = locationRef.current;
+        if (!loc) {
+          showAlert('Location needed', 'Please allow location access to get directions.');
+          return;
+        }
+        navigation.navigate('Directions', {
+          oLat: loc.latitude, oLng: loc.longitude,
+          dLat: msg.lat,      dLng: msg.lng,
+          name: msg.name || 'Destination',
+        });
+      }
       if (msg.action === 'mapMoved') {
         setMapCenter({ latitude: msg.lat, longitude: msg.lng });
         setShowSearchArea(true);
       }
     } catch (_) {}
-  }, []);
+  }, [navigation]);
 
   // ── "Search this area" — re-fetch spots for the panned map center ───────
   const searchThisArea = () => {
@@ -494,19 +696,20 @@ export default function EcoSpotsScreen() {
     if (location) postToMap({ type: 'init', lat: location.latitude, lng: location.longitude });
   };
 
-  const openDirections = (lat, lng) => {
-    const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-    if (Platform.OS === 'web') {
-      window.open(mapsUrl, '_blank');
-    } else {
-      const nativeUrl = Platform.OS === 'ios'
-        ? `maps:?daddr=${lat},${lng}`
-        : `google.navigation:q=${lat},${lng}`;
-      Linking.canOpenURL(nativeUrl).then(ok => Linking.openURL(ok ? nativeUrl : mapsUrl));
+  const openDirections = (lat, lng, name = '') => {
+    const loc = locationRef.current;
+    if (!loc) {
+      showAlert('Location needed', 'Please allow location access to get directions.');
+      return;
     }
+    navigation.navigate('Directions', {
+      oLat: loc.latitude, oLng: loc.longitude,
+      dLat: lat,          dLng: lng,
+      name: name || 'Destination',
+    });
   };
 
-  const getDirections = (place) => openDirections(place.lat, place.lng);
+  const getDirections = (place) => openDirections(place.lat, place.lng, place.name);
 
   const activeCfg   = PLACE_TYPES.find(t => t.id === activeType) || PLACE_TYPES[0];
   const isSearching = searchQuery.trim().length > 0;
@@ -645,7 +848,15 @@ export default function EcoSpotsScreen() {
           <Text style={s.emptySub}>
             {isSearching
               ? 'Try different keywords — e.g. "park", "recycling", "nursery".'
-              : `No ${activeCfg.label.toLowerCase()} found within 10 km of your location.`}
+              : activeType === 'ev_charging'
+                ? 'No EV charging stations found within 25 km. EV infrastructure in this area may not be mapped on OpenStreetMap yet.'
+                : activeType === 'recycling'
+                  ? 'No recycling centres found within 25 km. Formal recycling points in this area may not be on the map yet.'
+                  : activeType === 'nursery'
+                    ? 'No plant nurseries found within 15 km. Try searching by name — e.g. "Canal Road nursery".'
+                    : activeType === 'organic'
+                      ? 'No organic or health food shops found within 15 km. Try searching for "sabzi mandi" or "health food".'
+                      : `No ${activeCfg.label.toLowerCase()} found within 15 km of your location.`}
           </Text>
           {isSearching && (
             <TouchableOpacity style={s.clearBtn2} onPress={clearSearch}>

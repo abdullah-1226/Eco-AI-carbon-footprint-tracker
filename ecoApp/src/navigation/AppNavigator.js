@@ -33,6 +33,7 @@ import ProfileScreen        from '../screens/profile/ProfileScreen';
 import AlertsScreen         from '../screens/alerts/AlertsScreen';
 import ShareScreen          from '../screens/share/ShareScreen';
 import EcoSpotsScreen       from '../screens/ecospots/EcoSpotsScreen';
+import DirectionsScreen     from '../screens/ecospots/DirectionsScreen';
 import OffsetScreen         from '../screens/offset/OffsetScreen';
 import RejuvenateScreen     from '../screens/offset/RejuvenateScreen';
 import IslandScreen         from '../screens/island/IslandScreen';
@@ -326,6 +327,13 @@ function AppStack({ showSidebar }) {
               close: { animation: 'timing', config: { duration: 240, easing: Easing.in(Easing.cubic) } },
             } }} />
       ))}
+
+      <Stack.Screen name="Directions" component={DirectionsScreen}
+        options={{ headerShown: false, cardStyleInterpolator: slideInterp,
+          transitionSpec: {
+            open:  { animation: 'spring', config: { stiffness: 300, damping: 32, mass: 0.85 } },
+            close: { animation: 'spring', config: { stiffness: 300, damping: 32, mass: 0.85 } },
+          } }} />
 
       <Stack.Screen name="CreatePost"
         component={require('../screens/posts/CreatePostScreen').default}

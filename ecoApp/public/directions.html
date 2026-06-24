@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body,#map { width:100%; height:100%; background:#e8f4e8; }
+  @keyframes navPulse {
+    0%   { transform:scale(0.7); opacity:0.7; }
+    100% { transform:scale(2.2); opacity:0; }
+  }
+  .nav-wrap {
+    width:48px; height:48px; position:relative;
+    display:flex; align-items:center; justify-content:center;
+    transform-origin:center center;
+  }
+  .nav-pulse {
+    position:absolute; width:48px; height:48px; border-radius:50%;
+    background:rgba(21,101,192,0.35);
+    animation:navPulse 2s ease-out infinite;
+  }
+  .nav-body {
+    position:relative; z-index:1;
+    width:36px; height:36px; border-radius:50%;
+    background:#1565C0;
+    border:3px solid #fff;
+    box-shadow:0 3px 12px rgba(21,101,192,0.55), 0 1px 4px rgba(0,0,0,0.25);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .nav-triangle {
+    width:0; height:0;
+    border-left:7px solid transparent;
+    border-right:7px solid transparent;
+    border-bottom:16px solid #fff;
+    margin-top:-3px;
+  }
+  .dest-pin {
+    width:0; height:0;
+    border-left:12px solid transparent;
+    border-right:12px solid transparent;
+    border-top:24px solid #E53935;
+    position:relative;
+  }
+  .dest-pin::after {
+    content:'';
+    position:absolute; top:-28px; left:-8px;
+    width:16px; height:16px; border-radius:50%;
+    background:#E53935; border:3px solid #fff;
+    box-shadow:0 0 0 3px rgba(229,57,53,0.4);
+  }
+  .leaflet-popup-content-wrapper { border-radius:10px !important; }
+  .leaflet-popup-content { font-size:13px; font-weight:700; color:#1a1a1a; margin:10px 14px; }
+  .leaflet-control-zoom { border:none !important; box-shadow:0 2px 8px rgba(0,0,0,0.15) !important; }
+  .leaflet-control-zoom a { border-radius:8px !important; margin:2px; }
+</style>
+</head><body>
+<div id="map"></div>
+<script>
+  function sendUp(data) {
+    if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(data); }
+    else { window.parent.postMessage(data, '*'); }
+  }
+
+  var map = L.map('map', { zoomControl:true, attributionControl:false });
+  map.setView([30.3753, 69.3451], 6);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    maxZoom:19, crossOrigin:true,
+  }).addTo(map);
+
+  var routeLine    = null;
+  var originMarker = null;
+  var destMarker   = null;
+  var navDLat      = null;
+  var navDLng      = null;
+
+  // Signal React Native that Leaflet is fully ready — it sends startNav in response.
+  map.whenReady(function() {
+    setTimeout(function() { map.invalidateSize(); }, 100);
+    sendUp(JSON.stringify({ action: 'mapReady' }));
+  });
+
+  async function startNav(oLat, oLng, dLat, dLng, name) {
+    navDLat = dLat;
+    navDLng = dLng;
+
+    originMarker = L.marker([oLat, oLng], {
+      icon: L.divIcon({
+        className: '',
+        html: '<div class="nav-wrap" id="origin-arrow"><div class="nav-pulse"></div><div class="nav-body"><div class="nav-triangle"></div></div></div>',
+        iconSize: [48, 48], iconAnchor: [24, 24],
+      }),
+      zIndexOffset: 1000,
+    }).bindPopup('<b>&#x1F535; Your Location</b>').addTo(map);
+
+    destMarker = L.marker([dLat, dLng], {
+      icon: L.divIcon({ className:'', html:'<div class="dest-pin"></div>', iconSize:[24,24], iconAnchor:[12,24] }),
+    }).bindPopup('<b>&#x1F4CD; ' + (name || 'Destination') + '</b>').addTo(map);
+    destMarker.openPopup();
+
+    map.fitBounds([[oLat, oLng], [dLat, dLng]], { padding:[60,60] });
+
+    try {
+      var url = 'https://router.project-osrm.org/route/v1/driving/'
+        + oLng + ',' + oLat + ';' + dLng + ',' + dLat
+        + '?overview=full&geometries=geojson';
+      var controller = new AbortController();
+      var tid = setTimeout(function() { controller.abort(); }, 15000);
+      var resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(tid);
+      var data = await resp.json();
+
+      if (!data.routes || !data.routes[0]) { sendUp(JSON.stringify({ action:'routeError' })); return; }
+
+      var route  = data.routes[0];
+      var coords = route.geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
+      routeLine  = L.polyline(coords, { color:'#1565C0', weight:6, opacity:0.85 }).addTo(map);
+      map.fitBounds(routeLine.getBounds(), { padding:[50,50] });
+
+      var distKm  = (route.distance / 1000).toFixed(1);
+      var mins    = Math.round(route.duration / 60);
+      var timeStr = mins >= 60 ? Math.floor(mins/60) + 'h ' + (mins%60) + 'min' : mins + ' min';
+      sendUp(JSON.stringify({ action:'routeReady', distKm:distKm, duration:timeStr }));
+
+      setTimeout(function() {
+        if (destMarker) { map.flyTo([dLat, dLng], 17, { duration:1.2 }); destMarker.openPopup(); }
+      }, 2500);
+
+    } catch(e) {
+      sendUp(JSON.stringify({ action:'routeError' }));
+    }
+  }
+
+  function updateOrigin(lat, lng, heading) {
+    if (!originMarker) return;
+    originMarker.setLatLng([lat, lng]);
+    var el = document.getElementById('origin-arrow');
+    if (el && heading !== null && heading >= 0) {
+      el.style.transform = 'rotate(' + heading + 'deg)';
+    }
+  }
+
+  function handleMsg(e) {
+    try {
+      var d   = e.data;
+      var msg = JSON.parse(typeof d === 'string' ? d : JSON.stringify(d));
+      if (msg.type === 'startNav')     startNav(msg.oLat, msg.oLng, msg.dLat, msg.dLng, msg.name);
+      if (msg.type === 'updateOrigin') updateOrigin(msg.lat, msg.lng, msg.heading);
+      if (msg.type === 'flyToDest' && navDLat !== null) {
+        map.flyTo([navDLat, navDLng], 17, { duration:1.0 });
+        if (destMarker) destMarker.openPopup();
+      }
+      if (msg.type === 'fitRoute' && routeLine) {
+        map.fitBounds(routeLine.getBounds(), { padding:[50,50] });
+      }
+    } catch(err) {}
+  }
+  document.addEventListener('message', handleMsg);
+  window.addEventListener('message', handleMsg);
+</script>
+</body></html>

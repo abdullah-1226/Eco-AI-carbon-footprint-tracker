@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Modal, Animated, Easing, Platform,
@@ -87,7 +87,11 @@ export default function OffsetScreen() {
   const [qty, setQty]                   = useState(1);
   const [activeCat, setActiveCat]       = useState('All');
   const [ringProg, setRingProg]         = useState(0);
-  const ringAnim = useRef(new Animated.Value(0)).current;
+  const [liveOffset, setLiveOffset]     = useState(0);
+  const ringAnim  = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const liveRef   = useRef(0);
+  const tickRef   = useRef(null);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -119,6 +123,36 @@ export default function OffsetScreen() {
       useNativeDriver: false,
     }).start();
     return () => ringAnim.removeListener(id);
+  }, [loading, balance]);
+
+  // ── Real-time live offset ticker ──────────────────────────────────────────────
+  useEffect(() => {
+    if (loading || !balance) return;
+
+    const totalOffset = balance?.totalOffset ?? 0;
+    if (totalOffset <= 0) return;
+
+    // Rate: assume offset accumulates over 365 days → per ms
+    const perMs = (totalOffset * 1000) / (365 * 24 * 60 * 60 * 1000);
+
+    liveRef.current = totalOffset;
+    setLiveOffset(totalOffset);
+
+    if (tickRef.current) clearInterval(tickRef.current);
+    tickRef.current = setInterval(() => {
+      liveRef.current = liveRef.current + perMs * 100;
+      setLiveOffset(liveRef.current);
+    }, 100);
+
+    // Pulsing dot animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.3, duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+        Animated.timing(pulseAnim, { toValue: 1,   duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+      ])
+    ).start();
+
+    return () => { if (tickRef.current) clearInterval(tickRef.current); };
   }, [loading, balance]);
 
   const handleContribute = async () => {
@@ -215,6 +249,50 @@ export default function OffsetScreen() {
             </View>
           )}
 
+          {/* ── Real-Time Live Offset Tracker ────────────────── */}
+          {balance && totalOffset > 0 && (
+            <LinearGradient
+              colors={['#071A0E', '#0D2414', '#071A0E']}
+              style={S.liveCard}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            >
+              {/* LIVE badge */}
+              <View style={S.liveBadge}>
+                <Animated.View style={[S.liveDot, { opacity: pulseAnim }]} />
+                <Text style={S.liveBadgeTxt}>LIVE</Text>
+              </View>
+
+              <Text style={S.liveTitle}>Real-Time Carbon Offset</Text>
+              <Text style={S.liveSubtitle}>Your contributions are actively reducing CO₂</Text>
+
+              {/* Big ticking counter */}
+              <View style={S.liveCounterRow}>
+                <Text style={S.liveCounter}>{liveOffset.toFixed(6)}</Text>
+                <Text style={S.liveUnit}> kg CO₂</Text>
+              </View>
+
+              {/* Rate pills */}
+              <View style={S.liveRateRow}>
+                {[
+                  { label: '/sec',  val: ((totalOffset / (365 * 24 * 3600))).toFixed(8) },
+                  { label: '/min',  val: ((totalOffset / (365 * 24 * 60))).toFixed(6)   },
+                  { label: '/hour', val: ((totalOffset / (365 * 24))).toFixed(4)        },
+                  { label: '/day',  val: (totalOffset / 365).toFixed(3)                 },
+                ].map(r => (
+                  <View key={r.label} style={S.liveRatePill}>
+                    <Text style={S.liveRateVal}>{r.val}</Text>
+                    <Text style={S.liveRateLabel}>kg{r.label}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={S.liveBarTrack}>
+                <Animated.View style={[S.liveBarFill, { width: `${Math.min((liveOffset % (totalOffset * 0.01)) / (totalOffset * 0.01) * 100, 100)}%` }]} />
+              </View>
+              <Text style={S.liveBarLabel}>Based on your total {totalOffset.toFixed(2)} kg offset spread over a year</Text>
+            </LinearGradient>
+          )}
+
           {/* ── Impact equivalencies ─────────────────────────── */}
           {balance && totalOffset > 0 && (
             <View style={S.section}>
@@ -269,7 +347,7 @@ export default function OffsetScreen() {
                 <View style={S.progBadges}>
                   <View style={[S.badge, { backgroundColor: p.colorLight || C.accentDim }]}>
                     <Text style={[S.badgeT, { color: p.color || C.accent }]}>
-                      ${p.pricePerUnit}/{p.unit}
+                      Free · per {p.unit}
                     </Text>
                   </View>
                   <View style={S.badge}>
@@ -329,9 +407,9 @@ export default function OffsetScreen() {
               {/* Live preview stats */}
               <View style={S.modalStats}>
                 {[
-                  { label: `${modal?.unit}(s)`,  val: String(qty) },
-                  { label: 'Cost (sim.)',         val: `$${((modal?.pricePerUnit || 0) * qty).toFixed(2)}` },
-                  { label: 'CO₂ Offset',          val: `${((modal?.co2PerUnit || 0) * qty).toFixed(1)} kg`, highlight: true },
+                  { label: `${modal?.unit}(s)`, val: String(qty) },
+                  { label: 'Cost',              val: 'Free ✅' },
+                  { label: 'CO₂ Offset',        val: `${((modal?.co2PerUnit || 0) * qty).toFixed(1)} kg`, highlight: true },
                 ].map(s => (
                   <View key={s.label} style={S.modalStat}>
                     <Text style={[S.modalStatVal, s.highlight && { color: C.pos }]}>{s.val}</Text>
@@ -352,7 +430,7 @@ export default function OffsetScreen() {
               </View>
 
               <Text style={S.modalNote}>
-                Simulated contribution for educational purposes.
+                Log your real eco action — EcoTrack AI records it and updates your carbon balance.
               </Text>
 
               <View style={S.modalActions}>
@@ -431,6 +509,51 @@ const S = StyleSheet.create({
   statVal:   { fontSize: 20, fontWeight: '800' },
   statUnit:  { fontSize: 9,  color: 'rgba(239,244,238,0.38)', marginTop: 2 },
   statLabel: { fontSize: 11, color: C.textSub, marginTop: 4 },
+
+  // ── Live tracker
+  liveCard: {
+    marginHorizontal: 16, marginTop: 18,
+    borderRadius: 22,
+    borderWidth: 1, borderColor: 'rgba(82,199,122,0.25)',
+    padding: 20,
+  },
+  liveBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(82,199,122,0.12)',
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
+    marginBottom: 12, gap: 6,
+    borderWidth: 1, borderColor: 'rgba(82,199,122,0.3)',
+  },
+  liveDot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: '#52C77A' },
+  liveBadgeTxt: { fontSize: 10, fontWeight: '900', color: '#52C77A', letterSpacing: 1.5 },
+
+  liveTitle:    { fontSize: 16, fontWeight: '800', color: C.text, marginBottom: 2 },
+  liveSubtitle: { fontSize: 11, color: C.textSub, marginBottom: 16 },
+
+  liveCounterRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 16 },
+  liveCounter: {
+    fontSize: 38, fontWeight: '900', color: '#52C77A',
+    fontVariant: ['tabular-nums'], letterSpacing: -1,
+  },
+  liveUnit: { fontSize: 15, fontWeight: '700', color: 'rgba(82,199,122,0.6)', marginBottom: 6, marginLeft: 4 },
+
+  liveRateRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  liveRatePill: {
+    flex: 1, alignItems: 'center',
+    backgroundColor: 'rgba(82,199,122,0.07)',
+    borderRadius: 10, paddingVertical: 8,
+    borderWidth: 1, borderColor: 'rgba(82,199,122,0.12)',
+  },
+  liveRateVal:   { fontSize: 10, fontWeight: '800', color: '#52C77A' },
+  liveRateLabel: { fontSize: 9,  color: C.textSub,  marginTop: 2 },
+
+  liveBarTrack: {
+    height: 4, backgroundColor: 'rgba(82,199,122,0.10)',
+    borderRadius: 2, marginBottom: 8, overflow: 'hidden',
+  },
+  liveBarFill:  { height: 4, backgroundColor: '#52C77A', borderRadius: 2 },
+  liveBarLabel: { fontSize: 10, color: 'rgba(239,244,238,0.28)', textAlign: 'center' },
 
   // ── Impact
   section:    { marginHorizontal: 16, marginTop: 24 },

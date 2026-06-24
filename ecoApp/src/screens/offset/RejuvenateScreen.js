@@ -6,6 +6,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 import { getPatchProjects, getPatchEstimate, createPatchOrder, checkEmissionLimit } from '../../api/api';
+import { useHaptics } from '../../hooks/useHaptics';
+import EcoConfetti from '../../components/EcoConfetti';
 import BackButton from '../../components/BackButton';
 import ScreenTransition from '../../components/ScreenTransition';
 
@@ -61,9 +63,9 @@ const COUNTRY_FLAGS = {
   PK: '🇵🇰', NG: '🇳🇬', GH: '🇬🇭', ZA: '🇿🇦', MX: '🇲🇽',
 };
 
-// Normalize Patch API project OR local fallback program into a common shape
+// Normalize project data into a common shape
 function normalizeProject(p, source) {
-  if (source === 'ecologi') {
+  if (source === 'pakistan' || source === 'ecologi') {
     const pricePerKg = (p.amount_per_tonne_cents_usd || 1500) / 100 / 1000; // $/kg
     const type       = p.type || 'forests';
     const meta       = TYPE_META[type] || { icon: '🌍', label: type };
@@ -102,6 +104,8 @@ function normalizeProject(p, source) {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function RejuvenateScreen({ route, navigation }) {
+  const { light, medium, success: hapticSuccess } = useHaptics();
+  const confettiRef = useRef(null);
   // Params from Dashboard (or defaults if navigated directly)
   const paramExcess = route?.params?.excessKg  ?? 0;
   const paramToday  = route?.params?.todayKg   ?? 0;
@@ -171,13 +175,15 @@ export default function RejuvenateScreen({ route, navigation }) {
   // Open in-app confirmation modal (replaces Alert.alert — works on web + mobile)
   const handleOffset = (project) => {
     if (customKg <= 0) return;
+    light();
     setConfirmProject(project);
   };
 
   const handleDonateWeb = (project) => {
     setConfirmProject(null);
-    const url = project.donateUrl || 'https://ecologi.com/offset';
-    Linking.openURL(url).catch(() => {});
+    if (!project.donateUrl) return;
+    medium();
+    Linking.openURL(project.donateUrl).catch(() => {});
   };
 
   const handleRecordInApp = async (project) => {
@@ -185,10 +191,11 @@ export default function RejuvenateScreen({ route, navigation }) {
     try {
       const res = await createPatchOrder({
         mass_kg:    customKg,
-        project_id: project.isEcologi ? project.id : undefined,
+        project_id: project.isPatch ? project.id : undefined,
       });
       setConfirmProject(null);
-      // Show success in-app (no Alert — use state instead)
+      hapticSuccess();
+      setTimeout(() => confettiRef.current?.fire(), 200);
       setSuccessMsg(res.data.message);
       setTimeout(() => { setSuccessMsg(null); navigation.goBack(); }, 2500);
     } catch (e) {
@@ -219,6 +226,7 @@ export default function RejuvenateScreen({ route, navigation }) {
   return (
     <ScreenTransition>
       <View style={S.root}>
+        <EcoConfetti ref={confettiRef} />
         <BackButton />
 
         <ScrollView style={S.scroll} contentContainerStyle={S.scrollContent} showsVerticalScrollIndicator={false}>
@@ -313,20 +321,14 @@ export default function RejuvenateScreen({ route, navigation }) {
               <Text style={S.costVal}>≈ ${(customKg * 0.01025).toFixed(3)} USD</Text>
             </View>
 
-            {source === 'ecologi' && (
-              <View style={S.patchBadge}>
-                <Text style={S.patchBadgeT}>🌿 Powered by Ecologi</Text>
-              </View>
-            )}
+            <View style={S.patchBadge}>
+              <Text style={S.patchBadgeT}>🇵🇰 Pakistan-Based Organisations</Text>
+            </View>
           </LinearGradient>
 
           {/* ── Project list ──────────────────────────────── */}
-          <Text style={S.sectionTitle}>
-            {source === 'ecologi' ? '🌿 Ecologi Carbon Projects' : '🌱 Offset Programs'}
-          </Text>
-          {source === 'ecologi' && (
-            <Text style={S.sectionSub}>Real certified projects powered by Ecologi</Text>
-          )}
+          <Text style={S.sectionTitle}>🌱 Pakistan Carbon Offset Projects</Text>
+          <Text style={S.sectionSub}>Verified local organisations working in Pakistan</Text>
 
           {projects.map((p, i) => (
             <View key={p.id} style={S.projCard}>
@@ -451,8 +453,8 @@ export default function RejuvenateScreen({ route, navigation }) {
                     {offsetting === confirmProject?.id
                       ? <ActivityIndicator color="#071209" size="small" />
                       : <>
-                          <Text style={S.primaryBtnT}>📱 Offset via Ecologi</Text>
-                          <Text style={S.primaryBtnSub}>Recorded in app · real CO₂ offset</Text>
+                          <Text style={S.primaryBtnT}>📱 Record Offset in App</Text>
+                          <Text style={S.primaryBtnSub}>Logged to your carbon balance instantly</Text>
                         </>
                     }
                   </LinearGradient>
@@ -465,7 +467,7 @@ export default function RejuvenateScreen({ route, navigation }) {
                   activeOpacity={0.8}
                 >
                   <Text style={S.secondaryBtnT}>🌐 Donate Directly on Website</Text>
-                  <Text style={S.secondaryBtnSub}>Opens certified platform in browser</Text>
+                  <Text style={S.secondaryBtnSub}>Opens the organisation's official website</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity onPress={() => setConfirmProject(null)} style={S.cancelLink}>

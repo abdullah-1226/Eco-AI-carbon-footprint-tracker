@@ -468,13 +468,38 @@ exports.getDistance = async (req, res, next) => {
         const isFlightMode = ['flight_domestic', 'flight_international'].includes(subType);
         const straightLine = haversineKm(place1.lat, place1.lng, place2.lat, place2.lng);
 
-        // Road ≈ straight-line × 1.3 | Flight = straight-line (already a great-circle distance)
-        const distanceKm  = isFlightMode
-            ? straightLine
-            : parseFloat((straightLine * 1.3).toFixed(1));
+        let distanceKm, durationMin, routeMethod;
 
-        const speedKmH    = isFlightMode ? 800 : 60;
-        const durationMin = Math.round((distanceKm / speedKmH) * 60);
+        if (isFlightMode) {
+            // Great-circle (Haversine) is the correct measure for flight distances
+            distanceKm  = parseFloat(straightLine.toFixed(1));
+            durationMin = Math.round((distanceKm / 800) * 60);
+            routeMethod = 'haversine_flight';
+        } else {
+            // Use OSRM for real road distance — same routing engine used in DirectionsScreen
+            try {
+                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${place1.lng},${place1.lat};${place2.lng},${place2.lat}?overview=false`;
+                const ctrl    = new AbortController();
+                const tid     = setTimeout(() => ctrl.abort(), 10000);
+                const osrmRes = await fetch(osrmUrl, { signal: ctrl.signal });
+                clearTimeout(tid);
+                const osrmData = await osrmRes.json();
+
+                if (osrmData.routes && osrmData.routes[0]) {
+                    distanceKm  = parseFloat((osrmData.routes[0].distance / 1000).toFixed(1));
+                    durationMin = Math.round(osrmData.routes[0].duration / 60);
+                    routeMethod = 'osrm_road';
+                } else {
+                    throw new Error('no_route');
+                }
+            } catch (_) {
+                // OSRM unavailable — fall back to straight-line × 1.3 estimate
+                distanceKm  = parseFloat((straightLine * 1.3).toFixed(1));
+                durationMin = Math.round((distanceKm / 60) * 60);
+                routeMethod = 'haversine_estimate';
+            }
+        }
+
         const durationTxt = durationMin >= 60
             ? `~${Math.floor(durationMin / 60)}h ${durationMin % 60}m`
             : `~${durationMin}m`;
@@ -487,9 +512,9 @@ exports.getDistance = async (req, res, next) => {
             durationText: durationTxt,
             origin:       place1.name,
             destination:  place2.name,
-            originCoords:  { lat: place1.lat, lng: place1.lng },
-            destCoords:    { lat: place2.lat, lng: place2.lng },
-            method:       'nominatim_haversine',
+            originCoords: { lat: place1.lat, lng: place1.lng },
+            destCoords:   { lat: place2.lat, lng: place2.lng },
+            method:       routeMethod,
         });
 
     } catch (err) {
@@ -608,11 +633,24 @@ const OVERPASS_MIRRORS = [
 ];
 
 const OVERPASS_TAGS = {
-  park:       [['leisure','park'], ['leisure','nature_reserve'], ['leisure','garden'], ['landuse','grass']],
-  nursery:    [['shop','garden_centre'], ['shop','plant'], ['landuse','plant_nursery']],
-  recycling:  [['amenity','recycling'], ['amenity','waste_disposal']],
-  organic:    [['shop','organic'], ['shop','health_food'], ['shop','greengrocer'], ['shop','farm']],
-  ev_charging:[['amenity','charging_station']],
+  // Parks — include recreation ground & sports fields common in South Asian cities
+  park: [
+    ['leisure','park'], ['leisure','garden'], ['leisure','nature_reserve'],
+    ['leisure','recreation_ground'], ['leisure','pitch'], ['landuse','recreation_ground'],
+  ],
+  // Nurseries — 'shop=nursery' used informally by many Pakistani OSM mappers
+  nursery: [
+    ['shop','garden_centre'], ['shop','plant'], ['shop','nursery'],
+    ['landuse','plant_nursery'], ['shop','florist'],
+  ],
+  recycling: [
+    ['amenity','recycling'], ['amenity','waste_disposal'], ['amenity','waste_transfer_station'],
+  ],
+  organic: [
+    ['shop','organic'], ['shop','health_food'], ['shop','greengrocer'],
+    ['shop','farm'], ['shop','vegetables'], ['shop','fruit'],
+  ],
+  ev_charging: [['amenity','charging_station']],
 };
 
 const buildOverpassQuery = (lat, lng, radiusM, tags) => {
@@ -620,16 +658,18 @@ const buildOverpassQuery = (lat, lng, radiusM, tags) => {
         `node["${k}"="${v}"](around:${radiusM},${lat},${lng});`,
         `way["${k}"="${v}"](around:${radiusM},${lat},${lng});`,
     ]).join('\n');
-    return `[out:json][timeout:20];\n(\n${parts}\n);\nout center 20;`;
+    return `[out:json][timeout:25];\n(\n${parts}\n);\nout center 50;`;
 };
 
-// ─── Search terms per category ────────────────────────────────────────────────
-const NOM_TYPE_QUERIES = {
-    park:       ['park', 'garden', 'nature reserve', 'botanical garden', 'public park'],
-    recycling:  ['recycling', 'waste disposal', 'scrap dealer', 'kabari'],
-    organic:    ['organic', 'health food', 'farm shop', 'sabzi mandi', 'vegetable market'],
-    ev_charging:['charging station', 'electric vehicle', 'ev charging'],
-    nursery:    ['nursery', 'garden centre', 'plant shop', 'flowers'],
+// ─── Structured Nominatim tags per category ───────────────────────────────────
+// Use exact OSM tag params (amenity=, shop=, leisure=) instead of keyword text
+// search — prevents "anything with 'ev' in the name" false matches.
+const NOM_STRUCTURED_TAGS = {
+    park:       [{ leisure:'park' }, { leisure:'garden' }, { leisure:'nature_reserve' }, { leisure:'recreation_ground' }],
+    nursery:    [{ shop:'garden_centre' }, { shop:'plant' }, { shop:'nursery' }, { landuse:'plant_nursery' }, { shop:'florist' }],
+    recycling:  [{ amenity:'recycling' }, { amenity:'waste_disposal' }],
+    organic:    [{ shop:'organic' }, { shop:'health_food' }, { shop:'greengrocer' }, { shop:'farm' }, { shop:'vegetables' }],
+    ev_charging:[{ amenity:'charging_station' }],
 };
 
 // ─── Helper: extract clean address from Nominatim element ────────────────────
@@ -676,48 +716,45 @@ const reverseGeocode = async (lat, lng) => {
     } catch { return { city: '', countryCode: '', country: '', bb: null }; }
 };
 
-// ─── Nominatim search restricted to country + 50km bounding box ──────────────
-// Does NOT use city name in query — avoids Urdu/local-script name issues in
-// countries like Pakistan where reverse geocode returns non-Latin city names.
+// ─── Nominatim search using exact OSM tag params ─────────────────────────────
+// Uses amenity=, shop=, leisure= structured params instead of free-text q= so
+// only proper tag-matched places are returned (no "anything named ev…" noise).
+// Viewbox is wider for sparse categories (EV / recycling) since they're rare.
 const nominatimCitySearch = async (userLat, userLng, type, geo, limit = 15) => {
     const { countryCode } = geo;
-    const delta   = 0.45;   // ~50 km box — covers any major city
+    const sparse  = type === 'ev_charging' || type === 'recycling';
+    const delta   = sparse ? 0.9 : 0.45;   // 100 km for sparse, 50 km for common
     const viewbox = `${userLng - delta},${userLat + delta},${userLng + delta},${userLat - delta}`;
 
-    const queries = type === 'all'
-        ? Object.entries(NOM_TYPE_QUERIES)
-        : [[type, NOM_TYPE_QUERIES[type] || [type]]];
+    const tagGroups = type === 'all'
+        ? Object.entries(NOM_STRUCTURED_TAGS).flatMap(([t, tags]) => tags.map(tag => ({ qType: t, tag })))
+        : (NOM_STRUCTURED_TAGS[type] || []).map(tag => ({ qType: type, tag }));
 
     const seen    = new Set();
     const results = [];
 
-    for (const [qType, terms] of queries) {
-        for (const term of terms) {
-            if (results.length >= limit) break;
-            try {
-                // Search by term only — countrycodes pins the country,
-                // viewbox+bounded pins the 50km area around the user
-                const params = new URLSearchParams({
-                    q:              term,
-                    format:         'json',
-                    limit:          '10',
-                    addressdetails: '1',
-                    viewbox,
-                    bounded:        '1',
-                    ...(countryCode && { countrycodes: countryCode }),
-                });
-                const res  = await fetch(`${NOMINATIM}/search?${params}`, { headers: NOM_HEADERS, signal: AbortSignal.timeout(7000) });
-                const data = await res.json();
-                for (const el of data) {
-                    if (seen.has(el.place_id) || results.length >= limit) continue;
-                    const elCC = (el.address?.country_code || '').toLowerCase();
-                    if (countryCode && elCC && elCC !== countryCode) continue;
-                    seen.add(el.place_id);
-                    results.push(nomToPlace(el, userLat, userLng, type === 'all' ? qType : type));
-                }
-            } catch { /* skip failed term */ }
-        }
+    for (const { qType, tag } of tagGroups) {
         if (results.length >= limit) break;
+        try {
+            const params = new URLSearchParams({
+                format:         'json',
+                limit:          '10',
+                addressdetails: '1',
+                viewbox,
+                bounded:        '1',
+                ...(countryCode && { countrycodes: countryCode }),
+                ...tag,   // e.g. { amenity: 'charging_station' } — exact OSM tag match
+            });
+            const res  = await fetch(`${NOMINATIM}/search?${params}`, { headers: NOM_HEADERS, signal: AbortSignal.timeout(7000) });
+            const data = await res.json();
+            for (const el of data) {
+                if (seen.has(el.place_id) || results.length >= limit) continue;
+                const elCC = (el.address?.country_code || '').toLowerCase();
+                if (countryCode && elCC && elCC !== countryCode) continue;
+                seen.add(el.place_id);
+                results.push(nomToPlace(el, userLat, userLng, qType));
+            }
+        } catch { /* skip failed tag */ }
     }
 
     return results.sort((a, b) => a.distance - b.distance);
@@ -737,12 +774,18 @@ exports.realNearbyPlaces = async (req, res) => {
         : (OVERPASS_TAGS[type] ?? OVERPASS_TAGS['park']);
 
     const applyFilter = (places) => q
-        ? places.filter(p => p.name.toLowerCase().includes(q) || p.address.toLowerCase().includes(q))
+        ? places.filter(p =>
+            p.name.toLowerCase().includes(q) ||
+            (p.address || '').toLowerCase().includes(q))
         : places;
 
-    // ── 1. Overpass — precise nearby OSM data, tries mirrors until one works ──
+    // EV chargers and recycling centres are very sparse — search wider.
+    // Everything else: 15 km as the user requested.
+    const radiusM = (type === 'ev_charging' || type === 'recycling') ? 25000 : 15000;
+
+    // ── 1. Overpass — real OSM data, accurate pin-point coordinates ──────────
     try {
-        const overpassQuery = buildOverpassQuery(userLat, userLng, 10000, tagSets);
+        const overpassQuery = buildOverpassQuery(userLat, userLng, radiusM, tagSets);
         let data = null;
         for (const mirror of OVERPASS_MIRRORS) {
             try {
@@ -750,7 +793,7 @@ exports.realNearbyPlaces = async (req, res) => {
                     method:  'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body:    `data=${encodeURIComponent(overpassQuery)}`,
-                    signal:  AbortSignal.timeout(12000),
+                    signal:  AbortSignal.timeout(14000),
                 });
                 if (!response.ok) continue;
                 data = await response.json();
@@ -764,6 +807,7 @@ exports.realNearbyPlaces = async (req, res) => {
             const elLng = el.lon ?? el.center?.lon;
             if (!elLat || !elLng) return null;
             const tags = el.tags || {};
+            // Only return places with a real name — unnamed nodes land on random spots
             const name = tags.name || tags['name:en'] || tags['name:ur'] || null;
             if (!name) return null;
             const street  = [tags['addr:housenumber'], tags['addr:street']].filter(Boolean).join(' ');
@@ -773,34 +817,36 @@ exports.realNearbyPlaces = async (req, res) => {
                 ? (Object.entries(OVERPASS_TAGS).find(([, ts]) => ts.some(([k, v]) => tags[k] === v))?.[0] || type)
                 : type;
             return {
-                id: `osm_${el.type}_${el.id}`, name,
+                id:        `osm_${el.type}_${el.id}`,
+                name,
                 address:   [street, area, city].filter(Boolean).join(', '),
-                lat: elLat, lng: elLng,
+                lat:       elLat,
+                lng:       elLng,
                 distance:  haversineKm(userLat, userLng, elLat, elLng),
-                type: elType, typeLabel: TYPE_LABELS[elType] || elType,
-                source: 'openstreetmap',
+                type:      elType,
+                typeLabel: TYPE_LABELS[elType] || elType,
+                source:    'openstreetmap',
             };
         }).filter(Boolean);
 
         places = applyFilter(places).sort((a, b) => a.distance - b.distance);
         if (places.length > 0)
             return res.status(200).json({ success: true, places: places.slice(0, 30), count: places.length, source: 'openstreetmap' });
-    } catch { /* Overpass unavailable — continue */ }
+    } catch { /* Overpass unavailable — try Nominatim */ }
 
-    // ── 2. Nominatim — country-restricted, 50km viewbox, city-wide search ────
+    // ── 2. Nominatim — exact OSM tag structured search, same country ─────────
     const geo = await reverseGeocode(userLat, userLng);
     try {
-        let places = await nominatimCitySearch(userLat, userLng, type, geo, 20);
+        let places = await nominatimCitySearch(userLat, userLng, type, geo, 25);
         places = applyFilter(places).sort((a, b) => a.distance - b.distance);
         if (places.length > 0)
-            return res.status(200).json({ success: true, places: places.slice(0, 20), count: places.length, source: 'nominatim', city: geo.city });
+            return res.status(200).json({ success: true, places: places.slice(0, 25), count: places.length, source: 'nominatim', city: geo.city });
     } catch { /* continue */ }
 
-    // ── 3. SPOTS_DB fallback — always returns nearby simulated eco spots ─────
-    const fallbackType = SPOTS_DB[type] ? type : 'park';
-    const fallbackPlaces = buildSpots(userLat, userLng, fallbackType, SPOTS_DB[fallbackType]);
-    const filtered = applyFilter(fallbackPlaces).sort((a, b) => a.distance - b.distance);
-    return res.status(200).json({ success: true, places: filtered, count: filtered.length, source: 'simulated', city: geo?.city });
+    // ── 3. No real data — return empty, never return fake coordinates ─────────
+    // Fake offset-based locations land on random houses/offices, which is worse
+    // than showing nothing. The frontend will show the category-specific empty state.
+    return res.status(200).json({ success: true, places: [], count: 0, source: 'none', city: geo?.city });
 };
 
 // ─── @route  GET /api/maps/text-search ───────────────────────────────────────

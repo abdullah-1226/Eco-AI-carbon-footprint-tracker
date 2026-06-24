@@ -127,7 +127,8 @@ export default function RegisterScreen({ navigation }) {
             style={styles.input}
             outlineColor={Colors.border}
             activeOutlineColor={Colors.primary}
-            theme={{ roundness: Radii.md }}
+            textColor={Colors.dark}
+            theme={{ roundness: Radii.md, colors: { onSurfaceVariant: Colors.muted } }}
           />
 
           <Text style={styles.label}>Email Address</Text>
@@ -148,7 +149,8 @@ export default function RegisterScreen({ navigation }) {
             style={styles.input}
             outlineColor={emailError ? Colors.danger : Colors.border}
             activeOutlineColor={emailError ? Colors.danger : Colors.primary}
-            theme={{ roundness: Radii.md }}
+            textColor={Colors.dark}
+            theme={{ roundness: Radii.md, colors: { onSurfaceVariant: Colors.muted } }}
           />
           {emailError ? (
             <Text style={styles.emailError}>⚠️  {emailError}</Text>
@@ -174,7 +176,8 @@ export default function RegisterScreen({ navigation }) {
             style={styles.input}
             outlineColor={Colors.border}
             activeOutlineColor={Colors.primary}
-            theme={{ roundness: Radii.md }}
+            textColor={Colors.dark}
+            theme={{ roundness: Radii.md, colors: { onSurfaceVariant: Colors.muted } }}
           />
 
           {/* Password strength meter */}
@@ -200,7 +203,7 @@ export default function RegisterScreen({ navigation }) {
                     <Text style={[styles.checkIcon, { color: strength.checks[key] ? Colors.success : Colors.danger }]}>
                       {strength.checks[key] ? '✓' : '✗'}
                     </Text>
-                    <Text style={[styles.checkText, { color: strength.checks[key] ? Colors.success : Colors.textMuted }]}>
+                    <Text style={[styles.checkText, { color: strength.checks[key] ? Colors.success : Colors.muted }]}>
                       {text}
                     </Text>
                   </View>
@@ -222,7 +225,8 @@ export default function RegisterScreen({ navigation }) {
             style={styles.input}
             outlineColor={confirm && confirm !== password ? Colors.danger : Colors.border}
             activeOutlineColor={Colors.primary}
-            theme={{ roundness: Radii.md }}
+            textColor={Colors.dark}
+            theme={{ roundness: Radii.md, colors: { onSurfaceVariant: Colors.muted } }}
           />
 
           <Button

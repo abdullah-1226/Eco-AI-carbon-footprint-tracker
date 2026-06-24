@@ -7,37 +7,55 @@ const User         = require('../models/User');
 const ECOLOGI_BASE = 'https://public.ecologi.com';
 const ecologiHdr   = () => ({ Authorization: `Bearer ${process.env.ECOLOGI_API_KEY}`, 'Content-Type': 'application/json' });
 
-// Available offset programs (simulated — FYP purposes)
+// Available offset programs (simulated — in-app, no external companies)
 const OFFSET_PROGRAMS = [
     {
-        id: 'tree_planting', name: 'Tree Planting', icon: '🌳',
-        description: 'Plant trees in deforested regions of Pakistan and globally. Each tree absorbs ~100 kg CO₂ over its lifetime.',
-        pricePerUnit: 10, co2PerUnit: 100, unit: 'tree',
-        color: '#2D6A4F', colorLight: '#D8F3DC',
+        id: 'tree_planting', name: 'Plant a Tree 🌳', icon: '🌳',
+        description: 'Virtually plant a tree through EcoTrack AI. Each tree absorbs ~21 kg CO₂ per year and supports local biodiversity.',
+        pricePerUnit: 0, co2PerUnit: 21, unit: 'tree',
+        color: '#2D6A4F', colorLight: 'rgba(45,106,79,0.18)',
     },
     {
-        id: 'solar_energy', name: 'Solar Energy', icon: '☀️',
-        description: 'Fund solar panel installation in rural communities across South Asia, displacing fossil fuel electricity.',
-        pricePerUnit: 15, co2PerUnit: 150, unit: 'panel',
-        color: '#E76F51', colorLight: '#FDE8D8',
+        id: 'solar_pledge', name: 'Solar Energy Pledge ☀️', icon: '☀️',
+        description: 'Pledge to use solar energy for one month. Switching to solar offsets ~150 kg CO₂ compared to grid electricity.',
+        pricePerUnit: 0, co2PerUnit: 150, unit: 'month',
+        color: '#E76F51', colorLight: 'rgba(231,111,81,0.18)',
     },
     {
-        id: 'wind_power', name: 'Wind Power', icon: '💨',
-        description: 'Support wind farm development. Wind energy offsets 120 kg CO₂ per MWh compared to coal power.',
-        pricePerUnit: 12, co2PerUnit: 120, unit: 'unit',
-        color: '#457B9D', colorLight: '#D6E8F5',
+        id: 'no_car_day', name: 'Car-Free Day 🚶', icon: '🚶',
+        description: 'Commit to a car-free day — walk, cycle, or use public transport. Each car-free day saves up to 5 kg CO₂.',
+        pricePerUnit: 0, co2PerUnit: 5, unit: 'day',
+        color: '#457B9D', colorLight: 'rgba(69,123,157,0.18)',
     },
     {
-        id: 'ocean_conservation', name: 'Ocean Conservation', icon: '🌊',
-        description: 'Protect ocean ecosystems — oceans absorb 30% of global CO₂. Fund marine restoration projects.',
-        pricePerUnit: 20, co2PerUnit: 200, unit: 'unit',
-        color: '#1D3557', colorLight: '#D6E4F0',
+        id: 'veg_meal', name: 'Vegetarian Meal 🥗', icon: '🥗',
+        description: 'Replace a meat-based meal with a plant-based one. Each vegetarian meal saves ~2.5 kg CO₂ vs a beef meal.',
+        pricePerUnit: 0, co2PerUnit: 2.5, unit: 'meal',
+        color: '#52B788', colorLight: 'rgba(82,183,136,0.18)',
     },
     {
-        id: 'biogas', name: 'Biogas Initiative', icon: '♻️',
-        description: 'Convert organic waste to clean energy for rural households, reducing methane emissions and deforestation.',
-        pricePerUnit: 8, co2PerUnit: 80, unit: 'unit',
-        color: '#606C38', colorLight: '#E5E8D3',
+        id: 'recycle_pledge', name: 'Recycling Pledge ♻️', icon: '♻️',
+        description: 'Commit to recycling all plastic, paper, and glass for one week. Recycling one week offsets ~10 kg CO₂.',
+        pricePerUnit: 0, co2PerUnit: 10, unit: 'week',
+        color: '#606C38', colorLight: 'rgba(96,108,56,0.18)',
+    },
+    {
+        id: 'energy_saving', name: 'Energy Saving Mode 💡', icon: '💡',
+        description: 'Turn off unused lights and unplug devices for a day. Small energy savings add up to ~3 kg CO₂ per day.',
+        pricePerUnit: 0, co2PerUnit: 3, unit: 'day',
+        color: '#F4A261', colorLight: 'rgba(244,162,97,0.18)',
+    },
+    {
+        id: 'local_food', name: 'Buy Local Food 🛒', icon: '🛒',
+        description: 'Buy locally sourced food instead of imported products. Reduces food transport emissions by ~8 kg CO₂ per shop.',
+        pricePerUnit: 0, co2PerUnit: 8, unit: 'shop',
+        color: '#8338EC', colorLight: 'rgba(131,56,236,0.18)',
+    },
+    {
+        id: 'cold_wash', name: 'Cold Wash Laundry 🫧', icon: '🫧',
+        description: 'Wash clothes at 30°C instead of 60°C. Cold washing saves ~0.6 kg CO₂ per load and uses 60% less energy.',
+        pricePerUnit: 0, co2PerUnit: 0.6, unit: 'load',
+        color: '#1D3557', colorLight: 'rgba(29,53,87,0.18)',
     },
 ];
 
@@ -57,8 +75,10 @@ exports.contribute = async (req, res, next) => {
         const amount    = program.pricePerUnit * quantity;
         const co2Offset = program.co2PerUnit   * quantity;
 
+        const uid = req.user._id.toString();
+
         const offset = await CarbonOffset.create({
-            user:        req.user.id,
+            user:        uid,
             program:     program.id,
             programName: program.name,
             programIcon: program.icon,
@@ -67,7 +87,7 @@ exports.contribute = async (req, res, next) => {
         });
 
         // Award eco points for offsetting
-        const stats = await UserStats.findOne({ user: req.user.id });
+        const stats = await UserStats.findOne({ user: uid });
         if (stats) {
             stats.totalPoints += Math.round(quantity * 20);
             await stats.save();
@@ -86,10 +106,11 @@ exports.contribute = async (req, res, next) => {
 // ─── @route  GET /api/offset/balance ──────────────────────────────────────────
 exports.getBalance = async (req, res, next) => {
     try {
-        const offsets = await CarbonOffset.find({ user: req.user.id });
+        const uid = req.user._id.toString();
+        const offsets = await CarbonOffset.find({ user: uid });
         const totalOffset = offsets.reduce((s, o) => s + o.co2Offset, 0);
 
-        const stats = await UserStats.findOne({ user: req.user.id });
+        const stats = await UserStats.findOne({ user: uid });
         const totalGenerated = stats?.totalCo2e ?? 0;
 
         const netBalance = totalOffset - totalGenerated;
@@ -110,7 +131,7 @@ exports.getBalance = async (req, res, next) => {
 // ─── @route  GET /api/offset/history ──────────────────────────────────────────
 exports.getHistory = async (req, res, next) => {
     try {
-        const history = await CarbonOffset.find({ user: req.user.id }).sort({ date: -1 }).limit(50);
+        const history = await CarbonOffset.find({ user: req.user._id.toString() }).sort({ date: -1 }).limit(50);
         res.status(200).json({ success: true, data: history });
     } catch (err) {
         next(err);
@@ -141,10 +162,11 @@ exports.getCommunityGoal = async (req, res, next) => {
 // Returns whether today's emissions exceed the user's daily threshold
 exports.checkEmissionLimit = async (req, res, next) => {
     try {
-        const user  = await User.findById(req.user.id);
+        const uid   = req.user._id.toString();
+        const user  = await User.findById(uid);
         const today = new Date(); today.setHours(0, 0, 0, 0);
 
-        const acts         = await Activity.find({ user: req.user.id, date: { $gte: today } });
+        const acts         = await Activity.find({ user: uid, date: { $gte: today } });
         const todayKg      = acts.reduce((s, a) => s + (a.co2e || 0), 0);
         const threshold    = user.dailyThreshold ?? 10;
         const exceeded     = todayKg > threshold;
@@ -160,79 +182,78 @@ exports.checkEmissionLimit = async (req, res, next) => {
     } catch (err) { next(err); }
 };
 
-// Ecologi-powered project options
-// For actual offset, all routes through Ecologi API — project_id determines carbon vs trees
+// Carbon offset projects — Pakistan-based organisations only
 const ECOLOGI_PROJECTS = [
     {
-        id: 'eco_carbon_portfolio',
-        name: 'Ecologi Carbon Portfolio',
-        description: 'Offsets your CO₂ through Ecologi\'s curated Gold Standard & VCS verified portfolio spanning forests, wind farms, and clean cookstoves across 20+ countries.',
-        country: 'GB', type: 'portfolio', verifier: 'Gold Standard',
-        amount_per_tonne_cents_usd: 1270,   // ~£10/tonne ≈ $12.70
-        donate_url: 'https://ecologi.com/offset',
-    },
-    {
-        id: 'eco_trees',
-        name: 'Plant Trees via Ecologi',
-        description: 'Plant verified trees in areas of greatest ecological need. Each tree absorbs ~21 kg CO₂ over its lifetime. Ecologi plants in the most impactful regions globally.',
-        country: 'GB', type: 'tree_planting', verifier: 'Ecologi Verified',
-        amount_per_tonne_cents_usd: 1810,   // ~£0.30/tree × (1000/21) per tonne
-        donate_url: 'https://ecologi.com/plant-trees',
-    },
-    {
-        id: 'eco_pakistan_forest',
-        name: 'Pakistan Billion Tree Restoration',
-        description: 'Community-led reforestation across KPK and Balochistan. Supports Pakistan\'s national Billion Tree Tsunami initiative restoring degraded hillsides.',
-        country: 'PK', type: 'forests', verifier: 'Plan Vivo',
+        id: 'eco_wwf_pakistan',
+        name: 'WWF Pakistan — Tree Planting 🇵🇰',
+        description: 'WWF Pakistan runs reforestation drives across KPK, Gilgit-Baltistan and Balochistan, restoring degraded hillside forests and protecting native wildlife corridors.',
+        country: 'PK', type: 'tree_planting', verifier: 'WWF Pakistan',
         amount_per_tonne_cents_usd: 890,
-        donate_url: 'https://www.wwf.org.pk/our_work/reforestation.php',
+        donate_url: 'https://wwf.org.pk',
     },
     {
-        id: 'eco_kenya_wind',
-        name: 'Kenyan Wind Power',
-        description: 'Funds wind turbines across the Ngong Hills supplying clean electricity to 150,000 Kenyan homes, displacing coal and diesel generation.',
-        country: 'KE', type: 'wind', verifier: 'Gold Standard',
+        id: 'eco_environment_pk',
+        name: 'Pakistan Environment Ministry 🇵🇰',
+        description: 'Official portal of Pakistan\'s Ministry of Environment — overseeing the national Billion Tree programme, clean air initiatives, and biodiversity protection across all provinces.',
+        country: 'PK', type: 'tree_planting', verifier: 'Govt of Pakistan',
+        amount_per_tonne_cents_usd: 750,
+        donate_url: 'https://environment.gov.pk',
+    },
+    {
+        id: 'eco_shehri',
+        name: 'Shehri — Citizens for Better Environment 🇵🇰',
+        description: 'Karachi-based citizens\' organisation fighting for cleaner air, greener urban spaces, and sustainable city planning in Pakistan\'s major cities since 1991.',
+        country: 'PK', type: 'portfolio', verifier: 'Shehri NGO',
         amount_per_tonne_cents_usd: 800,
-        donate_url: 'https://ecologi.com/offset',
+        donate_url: 'https://www.shehri.org',
     },
     {
-        id: 'eco_india_solar',
-        name: 'Rural Solar — India',
-        description: 'Replaces diesel irrigation pumps with solar panels across 3,000 smallholder farms in Rajasthan and Maharashtra.',
-        country: 'IN', type: 'solar', verifier: 'Gold Standard',
-        amount_per_tonne_cents_usd: 1000,
-        donate_url: 'https://www.myclimate.org/en/offset/offset-options/',
+        id: 'eco_mocc_pakistan',
+        name: 'Ministry of Climate Change 🇵🇰',
+        description: 'Pakistan\'s official climate ministry driving the national clean energy targets, reforestation goals, and forest carbon sequestration programmes under Pakistan\'s NDCs.',
+        country: 'PK', type: 'portfolio', verifier: 'Govt of Pakistan',
+        amount_per_tonne_cents_usd: 700,
+        donate_url: 'https://mocc.gov.pk',
     },
     {
-        id: 'eco_amazon',
-        name: 'Amazon REDD+ Conservation',
-        description: 'Protects 2.1 million hectares of pristine Amazon rainforest in Pará State from illegal logging and agricultural expansion.',
-        country: 'BR', type: 'forests', verifier: 'Verra',
-        amount_per_tonne_cents_usd: 1500,
-        donate_url: 'https://www.cooleffect.org',
+        id: 'eco_akrsp',
+        name: 'AKRSP — Northern Pakistan Forests 🇵🇰',
+        description: 'Aga Khan Rural Support Programme restores forests and promotes sustainable land use in Gilgit-Baltistan and Chitral — one of Pakistan\'s most ecologically vital mountain regions.',
+        country: 'PK', type: 'forests', verifier: 'AKRSP',
+        amount_per_tonne_cents_usd: 850,
+        donate_url: 'https://www.akrsp.org.pk',
     },
     {
-        id: 'eco_cookstoves',
-        name: 'Clean Cookstoves — Africa',
-        description: 'Distributes efficient cookstoves to 80,000 households in Sub-Saharan Africa, cutting wood consumption 60% and reducing indoor air pollution.',
-        country: 'KE', type: 'biomass', verifier: 'Gold Standard',
+        id: 'eco_sdpi',
+        name: 'SDPI — Green Economy Pakistan 🇵🇰',
+        description: 'Sustainable Development Policy Institute promotes green economy and low-carbon policies in Pakistan — including renewable energy transitions and carbon market readiness.',
+        country: 'PK', type: 'solar', verifier: 'SDPI',
         amount_per_tonne_cents_usd: 900,
-        donate_url: 'https://ecologi.com/offset',
+        donate_url: 'https://www.sdpi.org',
     },
     {
-        id: 'eco_ocean',
-        name: 'Blue Carbon — Pacific Mangroves',
-        description: 'Restores mangrove ecosystems in Fiji and Vanuatu. Mangroves sequester 5× more carbon per hectare than tropical forests.',
-        country: 'FJ', type: 'ocean', verifier: 'Verra',
-        amount_per_tonne_cents_usd: 2000,
-        donate_url: 'https://www.cooleffect.org',
+        id: 'eco_paksolar',
+        name: 'Pakistan Solar Association 🇵🇰',
+        description: 'National body promoting solar energy adoption across Pakistan — supporting households, farms, and businesses in switching to clean solar power to reduce carbon emissions.',
+        country: 'PK', type: 'solar', verifier: 'PakSolar',
+        amount_per_tonne_cents_usd: 650,
+        donate_url: 'https://www.paksolar.org',
+    },
+    {
+        id: 'eco_greenearth_pk',
+        name: 'Green Earth Pakistan 🇵🇰',
+        description: 'Pakistani environmental organisation focused on tree plantation drives, clean water campaigns, and community-led conservation projects across urban and rural Pakistan.',
+        country: 'PK', type: 'tree_planting', verifier: 'Green Earth PK',
+        amount_per_tonne_cents_usd: 820,
+        donate_url: 'https://greenearth.pk',
     },
 ];
 
 // ─── @route  GET /api/offset/patch/projects ───────────────────────────────────
 // Returns Ecologi project options (no live API call needed — Ecologi manages portfolio)
 exports.getPatchProjects = (req, res) => {
-    res.json({ success: true, source: 'ecologi', data: ECOLOGI_PROJECTS });
+    res.json({ success: true, source: 'pakistan', data: ECOLOGI_PROJECTS });
 };
 
 // ─── @route  GET /api/offset/patch/estimate?mass_kg=X ────────────────────────
