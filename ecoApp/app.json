@@ -36,7 +36,8 @@
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_IMAGES"
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -63,7 +64,12 @@
           "photosPermission": "EcoTrack AI needs access to your photos to set profile and cover photos.",
           "cameraPermission": "EcoTrack AI needs camera access to take profile and cover photos."
         }
-      ],
-    ]
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "36147ba5-3ff1-4b19-820f-d771ce51f519"
+      }
+    }
   }
 }
