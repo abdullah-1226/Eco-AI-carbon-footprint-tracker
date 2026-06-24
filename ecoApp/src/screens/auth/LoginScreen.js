@@ -123,13 +123,17 @@ export default function LoginScreen({ navigation, route }) {
     } catch { setError('Google sign-in failed.'); setGLoading(false); }
   };
 
+  const [loadingMsg, setLoadingMsg] = useState('Signing in...');
+
   const handleLogin = async () => {
     setError('');
     if (!email.trim() || !password.trim()) { setError('Please enter your email and password.'); return; }
     setLoading(true);
+    setLoadingMsg('Signing in...');
+    const wakeTimer = setTimeout(() => setLoadingMsg('Waking up server... please wait (~30s)'), 6000);
     try { await login(email.trim(), password); }
-    catch (err) { setError(err.response?.data?.error || 'Invalid email or password.'); }
-    finally { setLoading(false); }
+    catch (err) { setError(err.response?.data?.error || err.message === 'Network Error' ? 'Cannot reach server. Check your internet.' : 'Invalid email or password.'); }
+    finally { clearTimeout(wakeTimer); setLoading(false); setLoadingMsg('Signing in...'); }
   };
 
   const btnScale = useRef(new Animated.Value(1)).current;
@@ -257,7 +261,7 @@ export default function LoginScreen({ navigation, route }) {
                   style={s.signInBtn}
                 >
                   <LinearGradient colors={['#B2D054', '#8FA832']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.signInGrad}>
-                    <Text style={s.signInTxt}>{loading ? 'Signing in...' : 'Sign In'}</Text>
+                    <Text style={s.signInTxt}>{loading ? loadingMsg : 'Sign In'}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </Animated.View>

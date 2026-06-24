@@ -12,9 +12,11 @@ const BASE_URL = Platform.OS === 'web'
       ? 'http://localhost:3000/api'
       : PROD_URL);
 
+const IS_PROD = !__DEV__;
+
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 10000,
+  timeout: IS_PROD ? 60000 : 10000,
   headers: { 'Content-Type': 'application/json' },
 });
 
