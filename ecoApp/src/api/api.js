@@ -2,13 +2,15 @@ import axios from 'axios';
 import storage from '../utils/storage';
 import { Platform } from 'react-native';
 
+const PROD_URL = 'https://ecotrack-backend.onrender.com/api';
+
 const BASE_URL = Platform.OS === 'web'
   ? (typeof window !== 'undefined' && window.location.hostname === 'localhost'
-      ? 'http://localhost:3000/api'           // web browser on local machine
-      : 'https://your-production-api.com/api') // web browser in production
+      ? 'http://localhost:3000/api'
+      : PROD_URL)
   : (__DEV__
-      ? 'http://192.168.100.63:3000/api'      // mobile device on same WiFi (dev)
-      : 'https://your-production-api.com/api'); // mobile production
+      ? 'http://localhost:3000/api'
+      : PROD_URL);
 
 const api = axios.create({
   baseURL: BASE_URL,
