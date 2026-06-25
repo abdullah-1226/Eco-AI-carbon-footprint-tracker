@@ -29,7 +29,12 @@ function GoogleIcon({ size = 20 }) {
 }
 
 WebBrowser.maybeCompleteAuthSession();
-const BACKEND_URL  = Platform.OS === 'web' ? 'http://localhost:3000' : 'http://192.168.100.63:3000';
+const PROD_BACKEND = 'https://eco-ai-carbon-footprint-tracker-backend.onrender.com';
+const BACKEND_URL  = Platform.OS === 'web'
+  ? (typeof window !== 'undefined' && window.location.hostname === 'localhost'
+      ? 'http://localhost:3000'
+      : PROD_BACKEND)
+  : (__DEV__ ? 'http://localhost:3000' : PROD_BACKEND);
 const FRONTEND_URL = 'http://localhost:8081';
 
 export default function LoginScreen({ navigation, route }) {
