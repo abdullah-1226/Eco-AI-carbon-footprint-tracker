@@ -232,11 +232,15 @@ exports.googleUserInfoAuth = async (req, res, next) => {
 // ─── @route  GET /api/auth/google/init ──────────────────────────────────────
 // Redirects browser to Google's OAuth consent page
 // Works on ALL platforms: web, mobile WebBrowser, desktop, Chrome
+const getBackendURL = () => process.env.NODE_ENV === 'production'
+    ? (process.env.BACKEND_URL || 'https://eco-ai-carbon-footprint-tracker-backend.onrender.com')
+    : 'http://localhost:3000';
+
 exports.googleOAuthInit = (req, res) => {
     const isMobile = req.query.mobile === 'true';
     const params = new URLSearchParams({
         client_id:     process.env.GOOGLE_CLIENT_ID,
-        redirect_uri:  `${process.env.BACKEND_URL || 'https://eco-ai-carbon-footprint-tracker-backend.onrender.com'}/api/auth/google/callback`,
+        redirect_uri:  `${getBackendURL()}/api/auth/google/callback`,
         response_type: 'code',
         scope:         'openid email profile',
         access_type:   'offline',
@@ -249,7 +253,10 @@ exports.googleOAuthInit = (req, res) => {
 // Google redirects here after user grants permission
 exports.googleOAuthCallback = async (req, res) => {
     const { code, error, state } = req.query;
-    const returnUrl = state === 'mobile' ? 'ecotrack://auth' : 'http://localhost:8081';
+    const webFrontend = process.env.NODE_ENV === 'production'
+        ? (process.env.FRONTEND_URL || 'http://localhost:8081')
+        : 'http://localhost:8081';
+    const returnUrl = state === 'mobile' ? 'ecotrack://auth' : webFrontend;
 
     try {
         if (error || !code) {
@@ -266,7 +273,7 @@ exports.googleOAuthCallback = async (req, res) => {
             code,
             client_id:     process.env.GOOGLE_CLIENT_ID,
             client_secret: clientSecret,
-            redirect_uri:  `${process.env.BACKEND_URL || 'https://eco-ai-carbon-footprint-tracker-backend.onrender.com'}/api/auth/google/callback`,
+            redirect_uri:  `${getBackendURL()}/api/auth/google/callback`,
             grant_type:    'authorization_code',
         });
 
