@@ -241,11 +241,10 @@ const sheetInterp = ({ current, layouts }) => ({
 });
 
 const headerOpts = {
-  headerStyle:        { backgroundColor: Colors.primary, height: Platform.OS === 'android' ? 52 : 56 },
+  headerStyle:        { backgroundColor: Colors.primary },
   headerTintColor:    Colors.white,
   headerTitleStyle:   { fontWeight: '800', fontSize: 16 },
   headerShadowVisible: false,
-  headerStatusBarHeight: Platform.OS === 'android' ? 0 : undefined,
 };
 
 // ── Main tabs (bottom bar on mobile, hidden on web — sidebar handles it) ──────
