@@ -60,6 +60,13 @@ export default function LoginScreen({ navigation, route }) {
     scopes: ['openid', 'profile', 'email'],
   });
 
+  // Log the exact redirect URI so we know what to register in Google Console
+  useEffect(() => {
+    if (googleRequest?.redirectUri) {
+      console.log('GOOGLE REDIRECT URI:', googleRequest.redirectUri);
+    }
+  }, [googleRequest?.redirectUri]);
+
   // ── Entrance animations (no moving logo) ─────────────────────────────────
   const brandFade  = useRef(new Animated.Value(0)).current;
   const brandSlide = useRef(new Animated.Value(-24)).current;
