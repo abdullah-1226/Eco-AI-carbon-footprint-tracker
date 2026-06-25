@@ -322,6 +322,64 @@ exports.googleOAuthCallback = async (req, res) => {
     }
 };
 
+// ─── @route  POST /api/auth/google/mobile ────────────────────────────────────
+// Called by mobile app after expo-auth-session gets the access_token from Google
+exports.googleMobileAuth = async (req, res) => {
+    try {
+        const { accessToken, idToken } = req.body;
+        if (!accessToken && !idToken) {
+            return res.status(400).json({ success: false, error: 'Google token required' });
+        }
+
+        let googleId, email, name, picture, email_verified;
+
+        if (idToken) {
+            // Verify ID token directly
+            const ticket = await googleClient.verifyIdToken({
+                idToken,
+                audience: [
+                    process.env.GOOGLE_CLIENT_ID,
+                    process.env.GOOGLE_ANDROID_CLIENT_ID,
+                    process.env.GOOGLE_IOS_CLIENT_ID,
+                ].filter(Boolean),
+            });
+            const payload = ticket.getPayload();
+            ({ sub: googleId, email, name, picture, email_verified } = payload);
+        } else {
+            // Verify access token via Google userinfo endpoint
+            const resp = await require('axios').get(
+                `https://www.googleapis.com/oauth2/v3/userinfo`,
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            ({ sub: googleId, email, name, picture, email_verified } = resp.data);
+        }
+
+        if (!email_verified) {
+            return res.status(400).json({ success: false, error: 'Google email not verified.' });
+        }
+
+        let user = await User.findOne({ $or: [{ googleId }, { email }] });
+        if (user) {
+            user.googleId = user.googleId || googleId;
+            user.avatar   = user.avatar   || picture;
+            user.provider = 'google';
+            await user.save({ validateBeforeSave: false });
+        } else {
+            user = await User.create({ name, email, googleId, avatar: picture, provider: 'google', role: 'user' });
+        }
+
+        const token = user.getSignedJwtToken();
+        res.status(200).json({
+            success: true,
+            token,
+            user: { id: user._id, name: user.name, email: user.email, role: user.role, avatar: user.avatar, provider: user.provider },
+        });
+    } catch (err) {
+        console.error('Google mobile auth error:', err.message);
+        res.status(500).json({ success: false, error: 'Google sign-in failed. Please try again.' });
+    }
+};
+
 // ─── @route  GET /api/auth/me ────────────────────────────────────────────────
 exports.getMe = async (req, res, next) => {
     try {

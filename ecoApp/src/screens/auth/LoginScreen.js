@@ -8,7 +8,10 @@ import { Text, TextInput } from 'react-native-paper';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
+import * as Google from 'expo-auth-session/providers/google';
 import { useAuth } from '../../context/AuthContext';
+import { googleMobileLogin } from '../../api/api';
 import { Radii, Spacing } from '../../theme';
 import Svg, { Path } from 'react-native-svg';
 
@@ -48,6 +51,14 @@ export default function LoginScreen({ navigation, route }) {
   const [loading,  setLoading]  = useState(false);
   const [gLoading, setGLoading] = useState(false);
   const [error,    setError]    = useState('');
+
+  // expo-auth-session Google provider (used for Android/iOS native OAuth)
+  const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
+    androidClientId: '622297938560-i03vmq68ttobum23gq32q9g73cfv76b6.apps.googleusercontent.com',
+    iosClientId:     '622297938560-ee2k919d8jp4bkgop9i1o4t7khdcge9j.apps.googleusercontent.com',
+    webClientId:     '622297938560-2ll401sqvvi6snv8q3bco6e93fnogins.apps.googleusercontent.com',
+    scopes: ['openid', 'profile', 'email'],
+  });
 
   // ── Entrance animations (no moving logo) ─────────────────────────────────
   const brandFade  = useRef(new Animated.Value(0)).current;
@@ -109,45 +120,38 @@ export default function LoginScreen({ navigation, route }) {
     return () => sub?.remove?.();
   }, []);
 
+  // Handle expo-auth-session Google response (mobile only)
+  useEffect(() => {
+    if (!googleResponse) return;
+    if (googleResponse.type === 'success') {
+      const { authentication } = googleResponse;
+      setGLoading(true);
+      googleMobileLogin({
+        accessToken: authentication?.accessToken,
+        idToken:     authentication?.idToken,
+      })
+        .then(res => {
+          const { token, user } = res.data;
+          loginWithGoogleToken(token, user);
+        })
+        .catch(() => { setError('Google sign-in failed. Please try again.'); setGLoading(false); });
+    } else if (googleResponse.type === 'error') {
+      setError('Google sign-in failed. Please try again.');
+      setGLoading(false);
+    } else if (googleResponse.type === 'dismiss' || googleResponse.type === 'cancel') {
+      setGLoading(false);
+    }
+  }, [googleResponse]);
+
   const handleGoogleSignIn = async () => {
     setGLoading(true); setError('');
     try {
       if (Platform.OS === 'web') {
         window.location.href = `${BACKEND_URL}/api/auth/google/init`;
       } else {
-        const redirectUrl = 'ecotrack://auth';
-        const authUrl = `${BACKEND_URL}/api/auth/google/init?mobile=true`;
-
-        // Listen for deep link redirect (Android fallback)
-        const linkSub = Linking.addEventListener('url', ({ url }) => {
-          if (!url?.startsWith('ecotrack://auth')) return;
-          linkSub?.remove?.();
-          WebBrowser.dismissBrowser?.();
-          const p = new URLSearchParams(url.split('?')[1] || '');
-          const err = p.get('googleError');
-          const tok = p.get('googleToken');
-          const usr = p.get('googleUser');
-          if (err) { setError(decodeURIComponent(err)); setGLoading(false); }
-          else if (tok && usr) {
-            try { loginWithGoogleToken(tok, JSON.parse(decodeURIComponent(usr))).catch(() => { setError('Google sign-in failed.'); setGLoading(false); }); }
-            catch { setError('Google sign-in failed.'); setGLoading(false); }
-          }
-        });
-
-        const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
-        linkSub?.remove?.();
-
-        if (result.type === 'success') {
-          const p = new URLSearchParams(result.url.split('?')[1] || '');
-          const err = p.get('googleError');
-          const tok = p.get('googleToken');
-          const usr = p.get('googleUser');
-          if (err) setError(decodeURIComponent(err));
-          else if (tok && usr) { let pu; try { pu = JSON.parse(decodeURIComponent(usr)); } catch { setError('Google sign-in failed.'); return; } await loginWithGoogleToken(tok, pu); }
-        } else if (result.type === 'cancel') {
-          setError('Google sign-in was cancelled.');
-        }
-        setGLoading(false);
+        // Use expo-auth-session — complies with Google OAuth 2.0 policy for mobile
+        await googlePromptAsync();
+        // response is handled in the useEffect above
       }
     } catch { setError('Google sign-in failed.'); setGLoading(false); }
   };

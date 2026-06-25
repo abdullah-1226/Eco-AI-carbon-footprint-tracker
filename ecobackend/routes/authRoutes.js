@@ -8,6 +8,7 @@ const {
     googleUserInfoAuth,
     googleOAuthInit,
     googleOAuthCallback,
+    googleMobileAuth,
     getMe,
     logout,
     updateDetails,
@@ -26,6 +27,7 @@ router.post('/google',                   googleAuth);           // Google OAuth 
 router.post('/google/userinfo',          googleUserInfoAuth);   // Google OAuth (web — userInfo)
 router.get('/google/init',               googleOAuthInit);      // Universal Google OAuth (all platforms)
 router.get('/google/callback',           googleOAuthCallback);  // Google redirects here after login
+router.post('/google/mobile',            googleMobileAuth);     // Mobile: verify token from expo-auth-session
 router.post('/forgotpassword',           forgotPassword);
 router.put('/resetpassword/:resettoken', resetPassword);
 

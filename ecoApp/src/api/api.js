@@ -33,6 +33,7 @@ export const checkEmail      = (email)       => api.get('/auth/check-email', { p
 export const login           = (data)        => api.post('/auth/login', data);
 export const googleLogin         = (idToken)   => api.post('/auth/google', { idToken });
 export const googleUserInfoLogin = (userInfo)  => api.post('/auth/google/userinfo', { userInfo });
+export const googleMobileLogin   = (tokens)    => api.post('/auth/google/mobile', tokens);
 export const forgotPassword  = (email)       => api.post('/auth/forgotpassword', { email });
 export const resetPassword   = (token, password) => api.put(`/auth/resetpassword/${token}`, { password });
 export const logout          = ()            => api.get('/auth/logout');
