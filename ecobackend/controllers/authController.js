@@ -232,9 +232,12 @@ exports.googleUserInfoAuth = async (req, res, next) => {
 // ─── @route  GET /api/auth/google/init ──────────────────────────────────────
 // Redirects browser to Google's OAuth consent page
 // Works on ALL platforms: web, mobile WebBrowser, desktop, Chrome
-const getBackendURL = () => process.env.NODE_ENV === 'production'
-    ? (process.env.BACKEND_URL || 'https://eco-ai-carbon-footprint-tracker-backend.onrender.com')
-    : 'http://localhost:3000';
+const getBackendURL = () => {
+    const url = process.env.NODE_ENV === 'production'
+        ? (process.env.BACKEND_URL || 'https://eco-ai-carbon-footprint-tracker-backend.onrender.com')
+        : 'http://localhost:3000';
+    return url.replace(/\/+$/, ''); // strip any trailing slashes
+};
 
 exports.googleOAuthInit = (req, res) => {
     const isMobile = req.query.mobile === 'true';
