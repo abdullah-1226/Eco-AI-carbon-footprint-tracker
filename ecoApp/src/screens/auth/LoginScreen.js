@@ -115,7 +115,28 @@ export default function LoginScreen({ navigation, route }) {
       if (Platform.OS === 'web') {
         window.location.href = `${BACKEND_URL}/api/auth/google/init`;
       } else {
-        const result = await WebBrowser.openAuthSessionAsync(`${BACKEND_URL}/api/auth/google/init?mobile=true`, 'ecotrack://auth');
+        const redirectUrl = 'ecotrack://auth';
+        const authUrl = `${BACKEND_URL}/api/auth/google/init?mobile=true`;
+
+        // Listen for deep link redirect (Android fallback)
+        const linkSub = Linking.addEventListener('url', ({ url }) => {
+          if (!url?.startsWith('ecotrack://auth')) return;
+          linkSub?.remove?.();
+          WebBrowser.dismissBrowser?.();
+          const p = new URLSearchParams(url.split('?')[1] || '');
+          const err = p.get('googleError');
+          const tok = p.get('googleToken');
+          const usr = p.get('googleUser');
+          if (err) { setError(decodeURIComponent(err)); setGLoading(false); }
+          else if (tok && usr) {
+            try { loginWithGoogleToken(tok, JSON.parse(decodeURIComponent(usr))).catch(() => { setError('Google sign-in failed.'); setGLoading(false); }); }
+            catch { setError('Google sign-in failed.'); setGLoading(false); }
+          }
+        });
+
+        const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+        linkSub?.remove?.();
+
         if (result.type === 'success') {
           const p = new URLSearchParams(result.url.split('?')[1] || '');
           const err = p.get('googleError');
@@ -123,7 +144,7 @@ export default function LoginScreen({ navigation, route }) {
           const usr = p.get('googleUser');
           if (err) setError(decodeURIComponent(err));
           else if (tok && usr) { let pu; try { pu = JSON.parse(decodeURIComponent(usr)); } catch { setError('Google sign-in failed.'); return; } await loginWithGoogleToken(tok, pu); }
-        } else if (result.type !== 'cancel') {
+        } else if (result.type === 'cancel') {
           setError('Google sign-in was cancelled.');
         }
         setGLoading(false);
