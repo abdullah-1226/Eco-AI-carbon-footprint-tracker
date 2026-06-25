@@ -673,9 +673,13 @@ function TypeListWithScenarios({
                             ))}
                           </View>
                         )}
-                        {aiResult.suggestedValue && (
+                        {aiResult.suggestedValue ? (
                           <Text style={s.aiAutoFill}>
                             ✅ Auto-filled: {aiResult.suggestedValue} {o.unit}
+                          </Text>
+                        ) : (
+                          <Text style={[s.aiAutoFill, { color: '#F4C430' }]}>
+                            ⚠️ Enter the distance/value below to log
                           </Text>
                         )}
                         {/* Log button directly after AI result */}

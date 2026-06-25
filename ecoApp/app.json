@@ -41,12 +41,8 @@
       "intentFilters": [
         {
           "action": "VIEW",
-          "autoVerify": true,
           "data": [
-            {
-              "scheme": "ecotrack",
-              "host": "auth"
-            }
+            { "scheme": "ecotrack" }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
         }

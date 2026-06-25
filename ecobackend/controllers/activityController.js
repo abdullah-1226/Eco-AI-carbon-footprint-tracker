@@ -551,10 +551,52 @@ Example — FOOD "i use 5 kg mutton, 2.5 kg bbq and 2.5 kg deep fried":
     }
 };
 
+const PK_ROAD_KM = {
+    'lahore-karachi':1250,'karachi-lahore':1250,'lahore-islamabad':380,'islamabad-lahore':380,
+    'lahore-peshawar':490,'peshawar-lahore':490,'lahore-multan':350,'multan-lahore':350,
+    'lahore-faisalabad':160,'faisalabad-lahore':160,'lahore-sialkot':125,'sialkot-lahore':125,
+    'lahore-gujranwala':70,'gujranwala-lahore':70,'lahore-rawalpindi':370,'rawalpindi-lahore':370,
+    'karachi-islamabad':1625,'islamabad-karachi':1625,'karachi-multan':900,'multan-karachi':900,
+    'karachi-hyderabad':165,'hyderabad-karachi':165,'islamabad-peshawar':170,'peshawar-islamabad':170,
+    'islamabad-multan':420,'multan-islamabad':420,'multan-faisalabad':195,'faisalabad-multan':195,
+    'rawalpindi-islamabad':15,'islamabad-rawalpindi':15,'lahore-bahawalpur':480,'bahawalpur-lahore':480,
+};
 function simpleParse(description = '', baseEF = 0, unit = 'km') {
     const text = description.toLowerCase();
     let mult = 1.0;
+    let suggestedValue = null;
     const breakdown = [];
+
+    // Explicit km/km distance in description
+    const kmMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:km|kilometer|kilometre|miles?)/);
+    if (kmMatch) {
+        const val = parseFloat(kmMatch[1]);
+        suggestedValue = kmMatch[0].includes('mile') ? Math.round(val * 1.609) : val;
+        breakdown.push(`Distance: ${suggestedValue} km from description`);
+    }
+
+    // City pair distance lookup (e.g. "lahore to karachi", "lahore → karachi")
+    if (!suggestedValue) {
+        const cityMatch = text.match(/([a-z\s]+?)\s+(?:to|→|->|–)\s+([a-z\s]+)/);
+        if (cityMatch) {
+            const c1 = cityMatch[1].trim().replace(/\s+/g,' ');
+            const c2 = cityMatch[2].trim().split(/\s+/).slice(0,3).join(' ').replace(/\s+/g,' ');
+            const key = `${c1}-${c2}`;
+            if (PK_ROAD_KM[key]) {
+                suggestedValue = PK_ROAD_KM[key];
+                breakdown.push(`${c1}→${c2}: ${suggestedValue} km`);
+            }
+        }
+    }
+
+    // Hours of driving → estimate distance (avg 80 km/h)
+    if (!suggestedValue) {
+        const hrMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/);
+        if (hrMatch) {
+            suggestedValue = Math.round(parseFloat(hrMatch[1]) * 80);
+            breakdown.push(`~${suggestedValue} km estimated from ${hrMatch[1]}h drive`);
+        }
+    }
 
     // Passengers
     const paxMatch = text.match(/(\d+)\s*(people|passengers?|persons?|pax|ppl)/);
@@ -565,18 +607,17 @@ function simpleParse(description = '', baseEF = 0, unit = 'km') {
     // AC
     if (/\bac\b|air.?con|aircond/.test(text)) { mult *= 1.15; breakdown.push('×1.15 AC on'); }
     // Highway
-    if (/highway|motorway|freeway|express/.test(text)) { mult *= 0.9; breakdown.push('×0.9 highway (efficient)'); }
+    if (/highway|motorway|freeway|express/.test(text)) { mult *= 0.9; breakdown.push('×0.9 highway'); }
     // City / traffic
     if (/city|traffic|jam|urban|stop.?go/.test(text)) { mult *= 1.2; breakdown.push('×1.2 city traffic'); }
 
     mult = Math.min(3.0, Math.max(0.05, mult));
     return {
-        success:     true,
-        multiplier:  parseFloat(mult.toFixed(4)),
-        estimatedEF: parseFloat((baseEF * mult).toFixed(4)),
-        explanation: breakdown.length
-            ? `Applied: ${breakdown.join(', ')}.`
-            : 'No specific factors detected — using base rate.',
+        success:        true,
+        multiplier:     parseFloat(mult.toFixed(4)),
+        estimatedEF:    parseFloat((baseEF * mult).toFixed(4)),
+        suggestedValue: suggestedValue && suggestedValue > 0 ? suggestedValue : null,
+        explanation:    breakdown.length ? `Applied: ${breakdown.join(', ')}.` : 'No specific factors detected — using base rate.',
         breakdown,
     };
 }

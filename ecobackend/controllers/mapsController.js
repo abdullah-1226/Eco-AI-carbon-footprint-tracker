@@ -390,7 +390,7 @@ const googlePlaceDetails = async (placeId) => {
     } catch { return null; }
 };
 
-// geocodePlace: HERE → Google → Nominatim fallback
+// geocodePlace: HERE → Google → Nominatim → built-in CITIES DB
 const geocodePlace = async (query) => {
     if (HERE_KEY) {
         const results = await hereGeocode(query);
@@ -400,18 +400,30 @@ const geocodePlace = async (query) => {
         const results = await googleGeocode(query);
         if (results.length > 0) return { name: results[0].displayName, lat: results[0].lat, lng: results[0].lng };
     }
-    const url  = `${NOMINATIM}/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=0`;
-    const res  = await fetch(url, { headers: NOM_HEADERS });
-    const data = await res.json();
-    if (!data.length) return null;
-    return { name: data[0].display_name, lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    // Nominatim — safe JSON parse (may return XML/HTML when rate-limited on server IPs)
+    try {
+        const url  = `${NOMINATIM}/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=0`;
+        const res  = await fetch(url, { headers: NOM_HEADERS, signal: AbortSignal.timeout(6000) });
+        const text = await res.text();
+        if (text.trim().startsWith('[') || text.trim().startsWith('{')) {
+            const data = JSON.parse(text);
+            if (data.length) return { name: data[0].display_name, lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        }
+    } catch {}
+    // Built-in CITIES DB fallback — covers all major Pakistan + world cities offline
+    const key = query.trim().toLowerCase();
+    const cityEntry = CITIES[key] || CITIES[Object.keys(CITIES).find(k => key.includes(k) || k.includes(key)) || ''];
+    if (cityEntry) return { name: cityEntry.name || query, lat: cityEntry.lat, lng: cityEntry.lng };
+    return null;
 };
 
 const searchPlaces = async (query, limit = 15) => {
     // dedupe=0 → return ALL matching places with the same name worldwide
     const url = `${NOMINATIM}/search?q=${encodeURIComponent(query)}&format=json&limit=${limit}&addressdetails=1&dedupe=0`;
     const res  = await fetch(url, { headers: NOM_HEADERS, signal: AbortSignal.timeout(8000) });
-    const data = await res.json();
+    const text = await res.text();
+    if (!text.trim().startsWith('[')) return [];
+    const data = JSON.parse(text);
     return data.map(p => {
         const a       = p.address || {};
         const suburb  = a.suburb || a.neighbourhood || a.quarter || a.city_district || '';
@@ -991,17 +1003,29 @@ exports.autocomplete = async (req, res) => {
             }
         }
 
-        // ── 3. Nominatim fallback if HERE not configured ─────────────────────────
-        if (!HERE_KEY) {
-            const raw = await searchPlaces(q, 20);
-            const osm = raw
-                .filter(p => { const k = p.shortName.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
-                .slice(0, 10)
-                .map(p => ({ placeId: p.placeId, description: p.displayName, shortName: p.shortName, lat: p.lat, lng: p.lng }));
-            predictions = [...predictions, ...osm];
+        // ── 3. Built-in CITIES DB — always runs, covers major world cities offline ─
+        for (const [cityKey, city] of Object.entries(CITIES)) {
+            if (!cityKey.includes(q) && !q.split(' ').every(w => cityKey.includes(w))) continue;
+            const k = city.name.toLowerCase();
+            if (seen.has(k)) continue;
+            seen.add(k);
+            predictions.push({ placeId: `city_${cityKey.replace(/\s+/g,'_')}`, description: city.name, shortName: city.name, lat: city.lat, lng: city.lng });
+            if (predictions.length >= 12) break;
         }
 
-        const source = HERE_KEY ? 'local+here' : 'local+osm';
+        // ── 4. Nominatim fallback if HERE not configured ─────────────────────────
+        if (!HERE_KEY && predictions.length < 6) {
+            try {
+                const raw = await searchPlaces(q, 20);
+                const osm = raw
+                    .filter(p => { const k = p.shortName.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+                    .slice(0, 8)
+                    .map(p => ({ placeId: p.placeId, description: p.displayName, shortName: p.shortName, lat: p.lat, lng: p.lng }));
+                predictions = [...predictions, ...osm];
+            } catch {}
+        }
+
+        const source = HERE_KEY ? 'local+here' : 'local+cities';
         res.status(200).json({ success: true, predictions: predictions.slice(0, 12), source });
     } catch {
         res.status(200).json({ success: true, predictions: [] });
