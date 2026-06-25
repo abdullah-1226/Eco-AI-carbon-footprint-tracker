@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, Animated, Easing,
   TouchableOpacity, Platform, Image, ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -173,6 +174,7 @@ function CustomTabBar({ state, navigation, showSidebar }) {
   const currentRoute = state.routes[state.index]?.name;
   if (showSidebar || currentRoute === 'Settings') return null;
 
+  const insets = useSafeAreaInsets();
   const visibleRoutes = state.routes.filter(r => NAV_NAMES.has(r.name));
 
   return (
@@ -180,7 +182,7 @@ function CustomTabBar({ state, navigation, showSidebar }) {
       colors={['#0A1A0F', '#0F2818']}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
-      style={ws.bottomBar}
+      style={[ws.bottomBar, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 8) }]}
     >
       <ScrollView
         horizontal
@@ -239,10 +241,11 @@ const sheetInterp = ({ current, layouts }) => ({
 });
 
 const headerOpts = {
-  headerStyle:        { backgroundColor: Colors.primary },
+  headerStyle:        { backgroundColor: Colors.primary, height: Platform.OS === 'android' ? 52 : 56 },
   headerTintColor:    Colors.white,
-  headerTitleStyle:   { fontWeight: '800', fontSize: 17 },
+  headerTitleStyle:   { fontWeight: '800', fontSize: 16 },
   headerShadowVisible: false,
+  headerStatusBarHeight: Platform.OS === 'android' ? 0 : undefined,
 };
 
 // ── Main tabs (bottom bar on mobile, hidden on web — sidebar handles it) ──────
@@ -458,7 +461,6 @@ const ws = StyleSheet.create({
     borderTopWidth: 1.5,
     borderTopColor: 'rgba(178,208,84,0.22)',
     paddingTop: 6,
-    paddingBottom: Platform.OS === 'ios' ? 22 : Platform.OS === 'web' ? 10 : 8,
     shadowColor: '#B2D054',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.12,

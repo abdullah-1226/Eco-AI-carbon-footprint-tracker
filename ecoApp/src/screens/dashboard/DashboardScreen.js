@@ -820,7 +820,7 @@ function makeStyles(C) { return StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'center',
     gap: 10,
-    paddingTop: Platform.OS === 'ios' ? 58 : Platform.OS === 'web' ? 52 : 40,
+    paddingTop: Platform.OS === 'ios' ? 58 : Platform.OS === 'web' ? 52 : 16,
     paddingHorizontal: 22,
   },
   heroLogoWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
