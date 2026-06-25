@@ -35,7 +35,10 @@ const BACKEND_URL  = Platform.OS === 'web'
       ? 'http://localhost:3000'
       : PROD_BACKEND)
   : (__DEV__ ? 'http://localhost:3000' : PROD_BACKEND);
-const FRONTEND_URL = 'http://localhost:8081';
+
+const FRONTEND_URL = Platform.OS === 'web' && typeof window !== 'undefined'
+  ? `${window.location.protocol}//${window.location.host}`
+  : 'http://localhost:8081';
 
 export default function LoginScreen({ navigation, route }) {
   const { login, loginWithGoogleToken } = useAuth();
