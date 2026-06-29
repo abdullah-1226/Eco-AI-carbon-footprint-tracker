@@ -2,13 +2,30 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Alert, RefreshControl, ActivityIndicator,
-  Animated, Platform,
+  Animated, Platform, Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   getChallenges, searchChallengeUser, sendChallenge,
   acceptChallenge, declineChallenge, completeChallenge,
 } from '../../api/api';
+
+// showAlert is a no-op on web — use window.alert/confirm instead
+const showAlert = (title, message, buttons) => {
+  if (Platform.OS === 'web') {
+    if (buttons && buttons.length > 1) {
+      const confirmed = window.confirm(`${title}${message ? '\n\n' + message : ''}`);
+      if (confirmed) {
+        const action = buttons.find(b => b.style === 'destructive' || (b.text && b.text !== 'Cancel'));
+        action?.onPress?.();
+      }
+    } else {
+      window.alert(`${title}${message ? '\n\n' + message : ''}`);
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
 import { useAuth } from '../../context/AuthContext';
 import ScreenTransition from '../../components/ScreenTransition';
 
@@ -140,16 +157,18 @@ function ChallengeCard({ challenge, userId, onAccept, onDecline, onComplete }) {
 
 // ── Send Challenge Form ───────────────────────────────────────────────────────
 function SendForm({ onSent }) {
-  const [email,    setEmail]    = useState('');
-  const [found,    setFound]    = useState(null);
+  const [email,     setEmail]     = useState('');
+  const [found,     setFound]     = useState(null);
   const [searching, setSearching] = useState(false);
-  const [metric,   setMetric]   = useState('eco_score');
-  const [days,     setDays]     = useState(7);
-  const [sending,  setSending]  = useState(false);
+  const [metric,    setMetric]    = useState('eco_score');
+  const [days,      setDays]      = useState(7);
+  const [sending,   setSending]   = useState(false);
+  const [statusMsg, setStatusMsg] = useState(null); // { type: 'success'|'error', text: string }
   const debounce = useRef(null);
 
   useEffect(() => {
     setFound(null);
+    setStatusMsg(null);
     if (!email || !/\S+@\S+\.\S+/.test(email)) return;
     if (debounce.current) clearTimeout(debounce.current);
     setSearching(true);
@@ -164,17 +183,26 @@ function SendForm({ onSent }) {
   }, [email]);
 
   const handleSend = async () => {
-    if (!found) return Alert.alert('Not found', 'Enter a valid user email first.');
+    if (!found) {
+      setStatusMsg({ type: 'error', text: 'Enter a valid registered email first.' });
+      return;
+    }
     setSending(true);
+    setStatusMsg(null);
     try {
       const res = await sendChallenge({ opponent_email: email.trim(), metric, duration_days: days });
-      Alert.alert('⚔️ Challenge Sent!', res.data.message);
-      setEmail(''); setFound(null);
-      onSent();
+      setStatusMsg({ type: 'success', text: res.data.message ?? '⚔️ Challenge sent!' });
+      setEmail('');
+      setFound(null);
+      setTimeout(() => onSent(), 1200);
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.error ?? 'Could not send challenge.');
-    } finally { setSending(false); }
+      setStatusMsg({ type: 'error', text: err?.response?.data?.error ?? 'Could not send challenge.' });
+    } finally {
+      setSending(false);
+    }
   };
+
+  const canSend = !!found && !sending;
 
   return (
     <View style={styles.formCard}>
@@ -186,7 +214,7 @@ function SendForm({ onSent }) {
         placeholder="friend@example.com"
         placeholderTextColor="rgba(255,255,255,0.3)"
         value={email}
-        onChangeText={setEmail}
+        onChangeText={v => { setEmail(v); setStatusMsg(null); }}
         autoCapitalize="none"
         keyboardType="email-address"
       />
@@ -200,6 +228,15 @@ function SendForm({ onSent }) {
             <Text style={styles.foundEmail}>{found.email}</Text>
           </View>
           <Text style={{ color: '#34D399', fontSize: 18 }}>✓</Text>
+        </View>
+      )}
+
+      {/* Inline status — visible on both web and mobile */}
+      {statusMsg && (
+        <View style={[styles.statusBox, statusMsg.type === 'success' ? styles.statusSuccess : styles.statusError]}>
+          <Text style={[styles.statusTxt, statusMsg.type === 'success' ? styles.statusSuccessTxt : styles.statusErrorTxt]}>
+            {statusMsg.type === 'success' ? '✅ ' : '⚠️ '}{statusMsg.text}
+          </Text>
         </View>
       )}
 
@@ -225,11 +262,19 @@ function SendForm({ onSent }) {
         ))}
       </View>
 
-      <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={!found || sending} activeOpacity={0.85}>
-        <LinearGradient colors={found ? ['#B2D054','#8FA832'] : ['#333','#222']} style={styles.sendBtnGrad}>
-          {sending ? <ActivityIndicator color="#071209" /> : <Text style={styles.sendBtnTxt}>⚔️ Send Challenge</Text>}
+      {/* Pressable works more reliably than TouchableOpacity on web */}
+      <Pressable
+        onPress={handleSend}
+        disabled={!canSend}
+        style={({ pressed }) => [styles.sendBtn, !canSend && { opacity: 0.45 }, pressed && { opacity: 0.75 }]}
+      >
+        <LinearGradient colors={canSend ? ['#B2D054','#8FA832'] : ['#333','#222']} style={styles.sendBtnGrad}>
+          {sending
+            ? <ActivityIndicator color="#071209" />
+            : <Text style={[styles.sendBtnTxt, !canSend && { color: 'rgba(255,255,255,0.4)' }]}>⚔️ Send Challenge</Text>
+          }
         </LinearGradient>
-      </TouchableOpacity>
+      </Pressable>
     </View>
   );
 }
@@ -263,15 +308,15 @@ export default function ChallengeScreen({ navigation }) {
   const handleAccept = useCallback(async (id) => {
     try {
       await acceptChallenge(id);
-      Alert.alert('⚔️ Challenge Accepted!', 'Battle starts now. May the best eco warrior win!');
+      showAlert('⚔️ Challenge Accepted!', 'Battle starts now. May the best eco warrior win!');
       fetchData();
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.error ?? 'Could not accept.');
+      showAlert('Error', err?.response?.data?.error ?? 'Could not accept.');
     }
   }, [fetchData]);
 
   const handleDecline = useCallback(async (id) => {
-    Alert.alert('Decline Challenge?', 'Are you sure?', [
+    showAlert('Decline Challenge?', 'Are you sure?', [
       { text: 'Yes, Decline', style: 'destructive', onPress: async () => {
         await declineChallenge(id);
         fetchData();
@@ -283,10 +328,10 @@ export default function ChallengeScreen({ navigation }) {
   const handleComplete = useCallback(async (id) => {
     try {
       const res = await completeChallenge(id);
-      Alert.alert('🏁 Challenge Complete!', res.data.message);
+      showAlert('🏁 Challenge Complete!', res.data.message);
       fetchData();
     } catch (err) {
-      Alert.alert('Error', err?.response?.data?.error ?? 'Could not complete.');
+      showAlert('Error', err?.response?.data?.error ?? 'Could not complete.');
     }
   }, [fetchData]);
 
@@ -477,6 +522,12 @@ const styles = StyleSheet.create({
   formSub:      { fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 4 },
   input:        { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 14, color: '#EFF4EE', fontSize: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   searchingTxt: { fontSize: 12, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' },
+  statusBox:        { borderRadius: 10, padding: 12, borderLeftWidth: 3 },
+  statusSuccess:    { backgroundColor: 'rgba(52,211,153,0.1)', borderLeftColor: '#34D399' },
+  statusError:      { backgroundColor: 'rgba(239,68,68,0.1)',  borderLeftColor: '#EF4444' },
+  statusTxt:        { fontSize: 13, fontWeight: '600' },
+  statusSuccessTxt: { color: '#34D399' },
+  statusErrorTxt:   { color: '#FCA5A5' },
   foundBox:     { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(52,211,153,0.08)', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: 'rgba(52,211,153,0.25)' },
   foundAvatar:  { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(178,208,84,0.15)', justifyContent: 'center', alignItems: 'center' },
   foundName:    { fontSize: 14, fontWeight: '800', color: '#EFF4EE' },

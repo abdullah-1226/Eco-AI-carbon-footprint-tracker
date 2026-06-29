@@ -33,11 +33,12 @@ function GoogleIcon({ size = 20 }) {
 
 WebBrowser.maybeCompleteAuthSession();
 const PROD_BACKEND = 'https://eco-ai-carbon-footprint-tracker-backend.onrender.com';
+const DEV_LAN_IP   = '192.168.1.5'; // Mac's LAN IP — keep in sync with api.js
 const BACKEND_URL  = Platform.OS === 'web'
   ? (typeof window !== 'undefined' && window.location.hostname === 'localhost'
       ? 'http://localhost:3000'
       : PROD_BACKEND)
-  : (__DEV__ ? 'http://localhost:3000' : PROD_BACKEND);
+  : (__DEV__ ? `http://${DEV_LAN_IP}:3000` : PROD_BACKEND);
 
 const FRONTEND_URL = Platform.OS === 'web' && typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.host}`
@@ -53,11 +54,17 @@ export default function LoginScreen({ navigation, route }) {
   const [error,    setError]    = useState('');
 
   // expo-auth-session Google provider (used for Android/iOS native OAuth)
+  // redirectUri must use the reversed client ID scheme — the only URI Google accepts for Android/iOS OAuth clients
   const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
     androidClientId: '622297938560-i03vmq68ttobum23gq32q9g73cfv76b6.apps.googleusercontent.com',
     iosClientId:     '622297938560-ee2k919d8jp4bkgop9i1o4t7khdcge9j.apps.googleusercontent.com',
     webClientId:     '622297938560-2ll401sqvvi6snv8q3bco6e93fnogins.apps.googleusercontent.com',
     scopes: ['openid', 'profile', 'email'],
+    redirectUri: Platform.select({
+      android: 'com.googleusercontent.apps.622297938560-i03vmq68ttobum23gq32q9g73cfv76b6:/oauth2redirect',
+      ios:     'com.googleusercontent.apps.622297938560-ee2k919d8jp4bkgop9i1o4t7khdcge9j:/oauth2redirect',
+      default: undefined,
+    }),
   });
 
   // Log the exact redirect URI so we know what to register in Google Console

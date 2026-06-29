@@ -45,6 +45,16 @@
             { "scheme": "ecotrack" }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "com.googleusercontent.apps.622297938560-i03vmq68ttobum23gq32q9g73cfv76b6",
+              "path": "/oauth2redirect"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
     },

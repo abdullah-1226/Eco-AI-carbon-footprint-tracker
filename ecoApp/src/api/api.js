@@ -2,14 +2,16 @@ import axios from 'axios';
 import storage from '../utils/storage';
 import { Platform } from 'react-native';
 
-const PROD_URL = 'https://eco-ai-carbon-footprint-tracker-backend.onrender.com/api';
+const PROD_URL   = 'https://eco-ai-carbon-footprint-tracker-backend.onrender.com/api';
+// Your Mac's local IP — update this if you switch WiFi networks (run: ifconfig | grep "inet ")
+const DEV_LAN_IP = '192.168.1.5';
 
 const BASE_URL = Platform.OS === 'web'
   ? (typeof window !== 'undefined' && window.location.hostname === 'localhost'
       ? 'http://localhost:3000/api'
       : PROD_URL)
   : (__DEV__
-      ? 'http://localhost:3000/api'
+      ? `http://${DEV_LAN_IP}:3000/api`   // physical Android/iOS — must use Mac's LAN IP, not localhost
       : PROD_URL);
 
 const IS_PROD = !__DEV__;
